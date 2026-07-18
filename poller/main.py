@@ -29,10 +29,18 @@ log = logging.getLogger("poller")
 DEFAULT_BOARD_SLICE = 250
 DEFAULT_RESOLVE_SLICE = 40
 MAX_WORKERS = 8
+# Companies polled between database commits, so a long sweep is crash-safe.
+BATCH_SIZE = 50
 
 
-def poll_boards(session, limit):
-    """Poll a rotating slice of company boards, least-recently-checked first."""
+def poll_boards(session, limit, on_batch=None, batch_size=BATCH_SIZE):
+    """Poll a rotating slice of company boards, least-recently-checked first.
+
+    Results are handed to `on_batch` every `batch_size` companies rather than
+    accumulated and returned in one lump. A full sweep of the watchlist pulls
+    >130k raw postings and takes ~15 minutes, so committing only at the end meant
+    a crash or timeout near the finish discarded the entire run.
+    """
     companies = (
         session.execute(
             select(Company)
@@ -46,20 +54,38 @@ def poll_boards(session, limit):
     if not companies:
         return []
 
-    postings = []
+    collected, batch, done, total_raw = [], [], 0, 0
+
+    def flush_batch():
+        nonlocal batch
+        if not batch:
+            return
+        if on_batch is not None:
+            collected.extend(on_batch(batch) or [])
+        else:
+            collected.extend(batch)
+        batch = []
+
     with ThreadPoolExecutor(max_workers=MAX_WORKERS) as pool:
         futures = {pool.submit(ats.fetch_for_company, c): c for c in companies}
         for future in as_completed(futures):
             company = futures[future]
             try:
-                postings.extend(future.result() or [])
+                batch.extend(future.result() or [])
             except Exception as exc:
                 log.warning("boards: %s failed: %s", company.name, exc)
             company.last_checked_at = utcnow()
+            done += 1
 
-    log.info("boards: polled %s companies -> %s raw postings", len(companies), len(postings))
-    session.flush()
-    return postings
+            if done % batch_size == 0:
+                total_raw += len(batch)
+                flush_batch()
+                log.info("boards: %s/%s companies, %s raw so far", done, len(companies), total_raw)
+
+    total_raw += len(batch)
+    flush_batch()
+    log.info("boards: polled %s companies -> %s raw postings", len(companies), total_raw)
+    return collected
 
 
 def run(
@@ -75,28 +101,37 @@ def run(
     started = utcnow()
 
     with Session() as session:
-        harvested = []
+        harvested_count = 0
+        created = []
 
         # 1. Tracker feeds - cheap (3 requests) and the highest-yield source.
+        feed_postings = []
         try:
-            harvested.extend(simplify.fetch())
+            feed_postings.extend(simplify.fetch())
         except Exception as exc:
             log.error("simplify failed: %s", exc)
 
         # 2. Broad keyword search - not bounded by the watchlist.
         if not skip_search:
-            harvested.extend(search.fetch_all())
+            feed_postings.extend(search.fetch_all())
 
-        # 3. Learn companies from everything seen so far, then poll their boards.
-        upsert_companies(session, harvested)
+        # 3. Learn companies from everything seen so far, then store it.
+        upsert_companies(session, feed_postings)
+        created.extend(upsert_postings(session, feed_postings))
         session.commit()
+        harvested_count += len(feed_postings)
 
-        harvested.extend(poll_boards(session, board_slice))
-        upsert_companies(session, harvested)
-        session.commit()
+        # 4. Poll company boards, persisting each batch as it completes so a
+        #    long sweep survives a crash or a runner timeout.
+        def persist(batch):
+            nonlocal harvested_count
+            harvested_count += len(batch)
+            upsert_companies(session, batch)
+            new_rows = upsert_postings(session, batch)
+            session.commit()
+            return new_rows
 
-        # 4. Store new postings and alert on them.
-        created = upsert_postings(session, harvested)
+        created.extend(poll_boards(session, board_slice, on_batch=persist))
         session.commit()
 
         summary = {}
@@ -140,12 +175,12 @@ def run(
         log.info(
             "run complete in %.0fs | %s harvested | %s new postings | %s companies | alerts: %s",
             elapsed,
-            len(harvested),
+            harvested_count,
             len(created),
             total_companies,
             summary or "none",
         )
-        return {"harvested": len(harvested), "new": len(created), "alerts": summary}
+        return {"harvested": harvested_count, "new": len(created), "alerts": summary}
 
 
 def main():

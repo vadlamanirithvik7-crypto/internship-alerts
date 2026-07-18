@@ -161,10 +161,16 @@ Two gotchas encoded in the tests, both found by real mis-tagging:
 
 ## Notes
 
-- **Runtime budget.** The watchlist is >1,000 companies; polling all of them every
-  run would take far too long. Boards are polled in a rotating slice ordered by
-  least-recently-checked (`--board-slice`, default 250), so the full list is covered
-  over a few runs. Tracker feeds are cheap and run every time.
+- **Runtime budget.** The watchlist is >1,500 companies; polling all of them every
+  run would take far too long (a full sweep is ~15 min and ~136k raw postings).
+  Boards are polled in a rotating slice ordered by least-recently-checked
+  (`--board-slice`, default 250), so the full list is covered over a few runs.
+  Tracker feeds are cheap and run every time.
+- **Crash safety.** Board results are committed every 50 companies rather than once
+  at the end, so a crash or runner timeout part-way through a long sweep keeps the
+  work already done instead of discarding it.
+- **First run.** Seed with `--skip-alerts` before enabling alerts, or every existing
+  posting counts as new and you get thousands of notifications at once.
 - **Dedupe.** Postings are keyed on the canonical URL *alone* — lowercased, with
   tracking params and any `/application` suffix stripped. Sources disagree on
   everything else: aggregators truncate titles ("Product Analyst Intern" vs
