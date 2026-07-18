@@ -11,6 +11,7 @@ ATS API before we trust it; unresolved names still feed keyword search.
 """
 
 import logging
+import os
 import re
 import time
 
@@ -18,8 +19,11 @@ from poller.net import session
 
 log = logging.getLogger(__name__)
 
-# SEC requires a descriptive User-Agent identifying the requester.
-SEC_UA = "internship-alert-bot (personal project; vadlamani.rithvik7@gmail.com)"
+# SEC *enforces* a User-Agent carrying a real contact address - anything else gets
+# a 403. It's read from the environment rather than committed so a public repo
+# doesn't publish the address; set SEC_CONTACT_EMAIL in .env or as an Actions secret.
+SEC_CONTACT = os.environ.get("SEC_CONTACT_EMAIL", "").strip()
+SEC_UA = f"internship-alert-bot (personal project; {SEC_CONTACT})"
 SEC_BROWSE = "https://www.sec.gov/cgi-bin/browse-edgar"
 
 # Standard Industrial Classification codes mapped to our sector taxonomy.
@@ -92,6 +96,13 @@ def clean_company_name(raw: str) -> str:
 
 def fetch_sic_companies(sic: int, max_pages: int = 4, page_size: int = 100):
     """Return company names registered under one SIC code."""
+    if not SEC_CONTACT:
+        log.warning(
+            "discovery: SEC_CONTACT_EMAIL is not set - SEC rejects requests without "
+            "a contact address (403). Skipping company discovery."
+        )
+        return []
+
     names = []
     for page in range(max_pages):
         try:

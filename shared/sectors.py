@@ -2,8 +2,9 @@
 
 Deliberately rule-based (no LLM, no API cost). Each sector maps to keywords matched
 against the posting title, description and any category hint the source provides.
-Multi-word keywords match as substrings; single tokens match on word boundaries so
-"ic" doesn't fire on "logistics".
+Matching is anchored at the start of a word but loose at the end, so "firmware
+engineer" also catches "firmware engineering" while "arch intern" does not fire on
+"research intern". See _compile() for why that asymmetry matters.
 """
 
 import re

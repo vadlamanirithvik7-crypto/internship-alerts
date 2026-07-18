@@ -95,6 +95,11 @@ and `GMAIL_APP_PASSWORD` (the App Password, never your real one).
 | Adzuna | <https://developer.adzuna.com/> | free tier, no card. Biggest win of the keyword layer. |
 | USAJOBS | <https://developer.usajobs.gov/apirequest/> | free, email signup. NASA / national labs / DoD internships. |
 
+`SEC_CONTACT_EMAIL` is not an API key — just your email address. SEC EDGAR **rejects
+requests with a 403** unless the User-Agent carries a real contact address, so company
+discovery silently finds nothing without it. It's read from the environment rather than
+committed, so a public repo never publishes your address.
+
 Both are skipped gracefully if unset.
 
 ### 5. GitHub Actions (the scheduler)
@@ -102,7 +107,7 @@ Both are skipped gracefully if unset.
 Push this repo to GitHub, then add each `.env` value under
 **Settings → Secrets and variables → Actions**: `DATABASE_URL`, `NTFY_TOPIC`,
 `ALERT_EMAIL_FROM`, `ALERT_EMAIL_TO`, `GMAIL_APP_PASSWORD`, `ADZUNA_APP_ID`,
-`ADZUNA_APP_KEY`, `USAJOBS_API_KEY`, `USAJOBS_EMAIL`.
+`ADZUNA_APP_KEY`, `USAJOBS_API_KEY`, `USAJOBS_EMAIL`, `SEC_CONTACT_EMAIL`.
 
 The workflow polls every 30 minutes and runs SEC discovery weekly. Trigger it by hand
 from the Actions tab (**Run workflow**) to test.
