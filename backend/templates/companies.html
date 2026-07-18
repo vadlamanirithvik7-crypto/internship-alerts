@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block title %}Companies{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>Company watchlist</h1>
+  <p class="muted">
+    {{ total }} companies. Resolved ones have a live job board we poll directly;
+    unresolved ones are still matched by name through keyword search.
+  </p>
+</div>
+
+<div class="ats-summary">
+  {% for ats, count in by_ats %}
+  <span class="pill">{{ ats }}: {{ count }}</span>
+  {% endfor %}
+</div>
+
+<form method="get" action="/companies" class="search-bar">
+  <input type="text" name="q" value="{{ q }}" placeholder="Search companies">
+  <button type="submit">Search</button>
+</form>
+
+<table class="table">
+  <thead>
+    <tr><th>Company</th><th>ATS</th><th>Board</th><th>Last checked</th></tr>
+  </thead>
+  <tbody>
+    {% for c in companies %}
+    <tr>
+      <td>{{ c.name }}</td>
+      <td><span class="pill {% if c.resolved %}pill-active{% endif %}">{{ c.ats_type }}</span></td>
+      <td class="muted">{{ c.slug or c.workday_tenant or '-' }}</td>
+      <td class="muted">{{ c.last_checked_at.strftime('%b %d %H:%M') if c.last_checked_at else 'never' }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+{% if pages > 1 %}
+<div class="pager">
+  {% if page > 1 %}<a href="/companies?q={{ q }}&page={{ page - 1 }}">&larr; Previous</a>{% endif %}
+  <span class="muted">page {{ page }} of {{ pages }}</span>
+  {% if page < pages %}<a href="/companies?q={{ q }}&page={{ page + 1 }}">Next &rarr;</a>{% endif %}
+</div>
+{% endif %}
+{% endblock %}

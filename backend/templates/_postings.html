@@ -1,0 +1,52 @@
+<div class="results-head">
+  <span><strong>{{ total }}</strong> posting{{ '' if total == 1 else 's' }}</span>
+  {% if pages > 1 %}<span class="muted">page {{ page }} of {{ pages }}</span>{% endif %}
+</div>
+
+{% if not postings %}
+  <div class="empty">
+    <p>No postings match these filters.</p>
+    <p class="muted">Try clearing a filter, or widening the date range.</p>
+  </div>
+{% endif %}
+
+<ul class="postings">
+  {% for p in postings %}
+  <li class="posting">
+    <div class="posting-main">
+      <a class="posting-title" href="{{ p.url }}" target="_blank" rel="noopener">{{ p.title }}</a>
+      <div class="posting-company">{{ p.company_name }}</div>
+      <div class="posting-meta">
+        {% if p.location %}<span>{{ p.location }}</span>{% endif %}
+        {% if p.remote %}<span class="pill pill-remote">Remote</span>{% endif %}
+        {% if p.term %}<span class="pill">{{ p.term }}</span>{% endif %}
+        <span class="pill pill-source">{{ p.source }}</span>
+      </div>
+      <div class="posting-tags">
+        {% for tag in p.sector_tags | unpack %}
+          <span class="tag">{{ sector_labels.get(tag, tag) }}</span>
+        {% else %}
+          <span class="tag tag-muted">Uncategorized</span>
+        {% endfor %}
+      </div>
+    </div>
+    <div class="posting-date" title="First seen">
+      {{ p.first_seen_at.strftime('%b %d') if p.first_seen_at else '' }}
+    </div>
+  </li>
+  {% endfor %}
+</ul>
+
+{% if pages > 1 %}
+<div class="pager">
+  {% set base = '/partials/postings?' + (query_string | replace('page=' + page|string, '')) %}
+  {% if page > 1 %}
+    <button hx-get="/partials/postings?{{ query_string }}&page={{ page - 1 }}"
+            hx-target="#results" hx-swap="innerHTML">&larr; Previous</button>
+  {% endif %}
+  {% if page < pages %}
+    <button hx-get="/partials/postings?{{ query_string }}&page={{ page + 1 }}"
+            hx-target="#results" hx-swap="innerHTML">Next &rarr;</button>
+  {% endif %}
+</div>
+{% endif %}

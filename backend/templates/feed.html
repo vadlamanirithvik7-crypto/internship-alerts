@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="stats">
+  <div class="stat"><span class="stat-value">{{ stats.postings }}</span><span class="stat-label">postings</span></div>
+  <div class="stat"><span class="stat-value">{{ stats.today }}</span><span class="stat-label">new today</span></div>
+  <div class="stat"><span class="stat-value">{{ stats.companies }}</span><span class="stat-label">companies tracked</span></div>
+  <div class="stat"><span class="stat-value">{{ stats.filters }}</span><span class="stat-label">active filters</span></div>
+  <div class="stat"><span class="stat-value">{{ stats.alerts }}</span><span class="stat-label">alerts sent</span></div>
+</div>
+
+<div class="layout">
+  <aside class="sidebar">
+    <form id="filter-form"
+          hx-get="/partials/postings"
+          hx-target="#results"
+          hx-swap="innerHTML"
+          hx-trigger="change, keyup delay:400ms from:input[type=text], submit">
+
+      <div class="field">
+        <label>Search</label>
+        <input type="text" name="q" placeholder="title, company, location"
+               value="{{ params.get('q', '') }}">
+      </div>
+
+      <div class="field">
+        <label>Sector</label>
+        {% for key, label in sector_labels.items() %}
+        <label class="check">
+          <input type="checkbox" name="sector" value="{{ key }}"
+                 {% if key in selected_sectors %}checked{% endif %}>
+          {{ label }}
+        </label>
+        {% endfor %}
+      </div>
+
+      <div class="field">
+        <label>Exclude words</label>
+        <input type="text" name="exclude" placeholder="sales, marketing"
+               value="{{ params.get('exclude', '') }}">
+        <span class="hint">comma separated</span>
+      </div>
+
+      <div class="field">
+        <label>Location</label>
+        <input type="text" name="location" placeholder="e.g. Austin"
+               value="{{ params.get('location', '') }}">
+      </div>
+
+      <div class="field">
+        <label class="check">
+          <input type="checkbox" name="remote" value="1"
+                 {% if params.get('remote') %}checked{% endif %}> Remote only
+        </label>
+      </div>
+
+      <div class="field">
+        <label>Term</label>
+        <input type="text" name="term" placeholder="e.g. Summer 2026"
+               value="{{ params.get('term', '') }}">
+      </div>
+
+      <div class="field">
+        <label>Source</label>
+        <select name="source">
+          <option value="">All sources</option>
+          {% for s in sources %}
+          <option value="{{ s }}" {% if params.get('source') == s %}selected{% endif %}>{{ s }}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div class="field">
+        <label>First seen</label>
+        <select name="days">
+          <option value="">Any time</option>
+          {% for d, lbl in [('1','Last 24 hours'), ('3','Last 3 days'), ('7','Last week'), ('30','Last month')] %}
+          <option value="{{ d }}" {% if params.get('days') == d %}selected{% endif %}>{{ lbl }}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <a class="reset" href="/">Reset all</a>
+    </form>
+  </aside>
+
+  <section id="results" class="results">
+    {% include "_postings.html" %}
+  </section>
+</div>
+{% endblock %}

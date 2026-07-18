@@ -1,0 +1,101 @@
+name: Poll for new internships
+
+on:
+  schedule:
+    # Every 30 minutes. GitHub may delay scheduled runs under load, which is fine -
+    # alerts are deduped, so a late or doubled run never re-notifies you.
+    - cron: "*/30 * * * *"
+  workflow_dispatch:
+    inputs:
+      discovery:
+        description: "Run SEC sector discovery (slow, expands the watchlist)"
+        type: boolean
+        default: false
+      board_slice:
+        description: "How many company boards to poll this run"
+        default: "250"
+
+concurrency:
+  # Never let a slow run overlap the next scheduled one and double-poll.
+  group: poller
+  cancel-in-progress: false
+
+jobs:
+  poll:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run sector tagging tests
+        # Cheap guard: bad tagging rules would mis-route every alert this run.
+        run: python3 tests/test_sectors.py
+
+      - name: Poll sources and send alerts
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          ALERT_EMAIL_FROM: ${{ secrets.ALERT_EMAIL_FROM }}
+          ALERT_EMAIL_TO: ${{ secrets.ALERT_EMAIL_TO }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+          ADZUNA_APP_ID: ${{ secrets.ADZUNA_APP_ID }}
+          ADZUNA_APP_KEY: ${{ secrets.ADZUNA_APP_KEY }}
+          USAJOBS_API_KEY: ${{ secrets.USAJOBS_API_KEY }}
+          USAJOBS_EMAIL: ${{ secrets.USAJOBS_EMAIL }}
+        run: |
+          python3 poller/main.py \
+            --board-slice "${{ github.event.inputs.board_slice || '250' }}" \
+            ${{ github.event.inputs.discovery == 'true' && '--discovery' || '' }} \
+            --verbose
+
+  # Weekly: expand the watchlist with new SEC-listed companies in our sectors,
+  # then spend a bigger budget resolving them to live job boards.
+  discover:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    if: github.event_name == 'schedule'
+    # Only the Sunday 03:00 UTC tick should do discovery work.
+    steps:
+      - name: Check if weekly slot
+        id: slot
+        run: |
+          if [ "$(date -u +%u)" = "7" ] && [ "$(date -u +%H)" = "03" ] && [ "$(date -u +%M)" -lt 30 ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v4
+        if: steps.slot.outputs.run == 'true'
+
+      - uses: actions/setup-python@v5
+        if: steps.slot.outputs.run == 'true'
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        if: steps.slot.outputs.run == 'true'
+        run: pip install -r requirements.txt
+
+      - name: Discover and resolve companies
+        if: steps.slot.outputs.run == 'true'
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          python3 poller/main.py \
+            --discovery \
+            --board-slice 0 \
+            --resolve-slice 400 \
+            --skip-alerts \
+            --skip-search \
+            --verbose
