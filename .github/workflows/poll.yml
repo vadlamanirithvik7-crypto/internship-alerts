@@ -42,6 +42,7 @@ jobs:
         run: |
           python3 tests/test_sectors.py
           python3 tests/test_alerts.py
+          python3 tests/test_dedupe.py
 
       - name: Poll sources and send alerts
         env:

@@ -140,7 +140,10 @@ python3 poller/main.py --board-slice 500      # poll more boards this run
 python3 poller/main.py --discovery            # + SEC company discovery (slow)
 python3 poller/main.py --skip-alerts          # store without notifying
 python3 poller/retag.py --dry-run             # preview retag after editing sectors.py
+python3 poller/dedupe.py --dry-run            # preview merging duplicate postings
 python3 tests/test_sectors.py                 # tagging regression tests
+python3 tests/test_alerts.py                  # alert delivery (unicode titles)
+python3 tests/test_dedupe.py                  # cross-source dedupe identity
 ```
 
 ### Tuning sectors
@@ -162,8 +165,12 @@ Two gotchas encoded in the tests, both found by real mis-tagging:
   run would take far too long. Boards are polled in a rotating slice ordered by
   least-recently-checked (`--board-slice`, default 250), so the full list is covered
   over a few runs. Tracker feeds are cheap and run every time.
-- **Dedupe.** Postings are keyed by a hash of canonical URL + company + title, so the
-  same job arriving from several sources stores once and alerts once.
+- **Dedupe.** Postings are keyed on the canonical URL *alone* — lowercased, with
+  tracking params and any `/application` suffix stripped. Sources disagree on
+  everything else: aggregators truncate titles ("Product Analyst Intern" vs
+  "…(Spring/Summer 2026)") and record company names differently ("Aquatic" vs
+  "Aquatic Capital Management"), so including either field re-creates duplicates.
+  Run `python3 poller/dedupe.py` to merge rows stored under an older key.
 - **Workday dates.** Workday returns relative text ("Posted 30+ Days Ago") rather
   than a timestamp, so `first_seen_at` — not `posted_at` — drives new-posting alerts.
 - **Portable storage.** List-valued columns are stored as `|a|b|` strings rather than

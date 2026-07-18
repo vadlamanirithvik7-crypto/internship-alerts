@@ -86,12 +86,23 @@ def to_datetime(value):
     return None
 
 
+# Suffixes some sources append to the same underlying job link.
+_URL_TAIL = re.compile(r"/(application|apply|apply-now)/?$", re.I)
+
+
 def canonical_url(url: str) -> str:
-    """Strip tracking params so the same job from two sources dedupes to one row."""
+    """Reduce a job URL to a stable identity shared by every source that lists it.
+
+    The same posting reaches us with different casing (`/Etched/` vs `/etched/`),
+    with or without an `/application` suffix, and with tracking params. Lowercasing
+    is safe here because this value is only ever used as a dedupe key - the original
+    URL is stored separately for display and linking.
+    """
     if not url:
         return ""
     parsed = urlparse(url.strip())
-    return f"{parsed.scheme}://{parsed.netloc}{parsed.path}".rstrip("/")
+    path = _URL_TAIL.sub("", parsed.path).rstrip("/")
+    return f"{parsed.netloc}{path}".lower()
 
 
 def make_posting(

@@ -17,12 +17,20 @@ log = logging.getLogger(__name__)
 
 
 def _identity(posting: dict) -> str:
-    """Dedupe key. Prefers the canonical URL, which is stable across sources."""
-    return raw_hash(
-        posting.get("canonical_url") or posting.get("url") or "",
-        posting.get("company_name", ""),
-        posting.get("title", ""),
-    )
+    """Dedupe key for a posting.
+
+    Keyed on the canonical URL alone, because that is the only field the sources
+    agree on. The same job arrives with different titles (aggregators shorten
+    "Product Analyst Intern (Spring/Summer 2026)" to "Product Analyst Intern") and
+    different company names ("Aquatic" vs "Aquatic Capital Management"), so
+    including either in the key produces duplicate rows and duplicate alerts.
+
+    Only when a source gives us no URL do we fall back to company + title.
+    """
+    canonical = posting.get("canonical_url") or posting.get("url") or ""
+    if canonical:
+        return raw_hash(canonical)
+    return raw_hash(posting.get("company_name", ""), posting.get("title", ""))
 
 
 def upsert_companies(session, postings):
