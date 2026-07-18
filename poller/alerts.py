@@ -93,35 +93,43 @@ def send_ntfy(postings) -> bool:
         return False
 
     sent = 0
-    # Cap the burst so a large first run doesn't flood the phone.
-    for posting in postings[:20]:
+    # Publish via the JSON API rather than ntfy's header-based API: HTTP headers
+    # must be latin-1, and job titles routinely contain en-dashes, curly quotes
+    # and accented names, which raise UnicodeEncodeError before the request is
+    # even sent. The JSON body carries UTF-8 natively.
+    def publish(payload):
         try:
             response = requests.post(
-                f"{NTFY_BASE}/{topic}",
-                data=f"{posting.company_name} - {posting.location or 'Location N/A'}".encode(),
-                headers={
-                    "Title": posting.title[:200],
-                    "Click": posting.url,
-                    "Tags": "briefcase",
-                    "User-Agent": USER_AGENT,
-                },
+                NTFY_BASE,
+                json={"topic": topic, **payload},
+                headers={"User-Agent": USER_AGENT},
                 timeout=15,
             )
             response.raise_for_status()
-            sent += 1
+            return True
         except requests.RequestException as exc:
             log.warning("ntfy: push failed: %s", exc)
+            return False
+
+    # Cap the burst so a large first run doesn't flood the phone.
+    for posting in postings[:20]:
+        if publish(
+            {
+                "title": posting.title[:200],
+                "message": f"{posting.company_name} - {posting.location or 'Location N/A'}",
+                "click": posting.url,
+                "tags": ["briefcase"],
+            }
+        ):
+            sent += 1
 
     if len(postings) > 20:
-        try:
-            requests.post(
-                f"{NTFY_BASE}/{topic}",
-                data=f"...and {len(postings) - 20} more. Open the dashboard to see them all.".encode(),
-                headers={"Title": "More new internships", "User-Agent": USER_AGENT},
-                timeout=15,
-            )
-        except requests.RequestException:
-            pass
+        publish(
+            {
+                "title": "More new internships",
+                "message": f"...and {len(postings) - 20} more. Open the dashboard to see them all.",
+            }
+        )
 
     log.info("ntfy: pushed %s notifications", sent)
     return sent > 0

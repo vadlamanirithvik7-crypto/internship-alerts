@@ -36,9 +36,12 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      - name: Run sector tagging tests
-        # Cheap guard: bad tagging rules would mis-route every alert this run.
-        run: python3 tests/test_sectors.py
+      - name: Run tests
+        # Cheap guard: bad tagging rules mis-route every alert, and a non-latin-1
+        # job title used to crash delivery outright.
+        run: |
+          python3 tests/test_sectors.py
+          python3 tests/test_alerts.py
 
       - name: Poll sources and send alerts
         env:
