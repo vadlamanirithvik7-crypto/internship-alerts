@@ -26,15 +26,29 @@ GitHub Actions (every 30 min)          Render (free web service)
 
 ### Where postings come from
 
-Three layers, so coverage isn't capped by any single list:
+Several layers, so coverage isn't capped by any single list. Everything is deduped
+on the canonical URL, so overlapping sources are free — whoever lists a job first is
+what triggers the alert, and duplicates collapse into one row.
 
-1. **Community tracker feeds** — `SimplifyJobs/Summer2026-Internships`,
-   `vanshb03/Summer2026-Internships`, `SimplifyJobs/New-Grad-Positions`. Bot-updated
-   JSON with direct application links. Highest-yield source, ~3 HTTP requests.
-2. **Direct company boards** — Greenhouse, Lever, Ashby and Workday public JSON
+1. **Cross-company trackers** — bot-updated community lists that publish a direct
+   application link for a job *no matter which ATS the company uses*. This is how the
+   big employers that aren't on the four ATS APIs below (Google, Meta, Apple, …) get
+   caught at all. Two shapes are ingested: `listings.json` feeds
+   (`SimplifyJobs/*`, `vanshb03/*`) and markdown-table READMEs (`jobright-ai/*`). New
+   tracker repos are **auto-discovered every run** via the GitHub search API and
+   classified into one of those two shapes, so a tracker that appears mid-season is
+   picked up with no code change.
+2. **Hacker News "Who is hiring"** — the monthly thread, mined for intern/co-op roles.
+   Strong for startups that never reach a tracker repo.
+3. **Reddit megathreads** — r/csMajors and r/internships, mined via the Reddit API.
+   Broadest and noisiest; needs credentials (see setup) and skips itself without them.
+4. **Direct company boards** — Greenhouse, Lever, Ashby and Workday public JSON
    APIs, polled per company. Usually the fastest path from "posted" to "alerted".
-3. **Broad keyword search** — Adzuna, USAJOBS, Arbeitnow, RemoteOK. Not bounded by
+5. **Broad keyword search** — Adzuna, USAJOBS, Arbeitnow, RemoteOK. Not bounded by
    the watchlist, so it catches small/private companies the other layers miss.
+
+Only US-based roles are kept: a posting is dropped when every location it names is
+outside the US (a role listing both a US and a foreign office is kept).
 
 ### How the company watchlist grows (no hand-maintained list)
 
@@ -94,20 +108,31 @@ and `GMAIL_APP_PASSWORD` (the App Password, never your real one).
 |---|---|---|
 | Adzuna | <https://developer.adzuna.com/> | free tier, no card. Biggest win of the keyword layer. |
 | USAJOBS | <https://developer.usajobs.gov/apirequest/> | free, email signup. NASA / national labs / DoD internships. |
+| Reddit | <https://www.reddit.com/prefs/apps> → create app → **script** | free. The app's client ID and secret enable the Reddit megathread source. |
+
+Set `REDDIT_CLIENT_ID` and `REDDIT_CLIENT_SECRET` from the script app. Reddit
+**blocks unauthenticated API access**, so without these two the Reddit source skips
+itself (the other sources are unaffected). All three services are skipped gracefully
+if unset.
+
+`GITHUB_TOKEN` (optional) raises the rate limit on the GitHub search used to
+auto-discover new tracker repos — any classic personal access token with no scopes
+works. In GitHub Actions the built-in token covers this automatically; you only need
+to set one for heavy local runs.
 
 `SEC_CONTACT_EMAIL` is not an API key — just your email address. SEC EDGAR **rejects
 requests with a 403** unless the User-Agent carries a real contact address, so company
 discovery silently finds nothing without it. It's read from the environment rather than
 committed, so a public repo never publishes your address.
 
-Both are skipped gracefully if unset.
-
 ### 5. GitHub Actions (the scheduler)
 
 Push this repo to GitHub, then add each `.env` value under
 **Settings → Secrets and variables → Actions**: `DATABASE_URL`, `NTFY_TOPIC`,
 `ALERT_EMAIL_FROM`, `ALERT_EMAIL_TO`, `GMAIL_APP_PASSWORD`, `ADZUNA_APP_ID`,
-`ADZUNA_APP_KEY`, `USAJOBS_API_KEY`, `USAJOBS_EMAIL`, `SEC_CONTACT_EMAIL`.
+`ADZUNA_APP_KEY`, `USAJOBS_API_KEY`, `USAJOBS_EMAIL`, `SEC_CONTACT_EMAIL`,
+`REDDIT_CLIENT_ID`, `REDDIT_CLIENT_SECRET`. (`GITHUB_TOKEN` is provided by Actions
+automatically — no secret to add.)
 
 The workflow polls every 30 minutes and runs SEC discovery weekly. Trigger it by hand
 from the Actions tab (**Run workflow**) to test.
