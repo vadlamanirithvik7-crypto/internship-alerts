@@ -55,6 +55,31 @@ def get_json(url, *, params=None, headers=None, timeout=DEFAULT_TIMEOUT, retries
     return None
 
 
+def get_text(url, *, params=None, headers=None, timeout=DEFAULT_TIMEOUT, retries=2):
+    """GET and return response text, or None on failure. Same retry policy as get_json.
+
+    Used for sources that serve markdown/HTML (tracker READMEs) rather than JSON.
+    """
+    for attempt in range(retries + 1):
+        try:
+            resp = session().get(url, params=params, headers=headers, timeout=timeout)
+            if resp.status_code == 404:
+                return None
+            if resp.status_code == 429:
+                wait = 2 ** attempt
+                log.warning("rate limited by %s, sleeping %ss", url, wait)
+                time.sleep(wait)
+                continue
+            resp.raise_for_status()
+            return resp.text
+        except requests.RequestException as exc:
+            if attempt == retries:
+                log.warning("giving up on %s: %s", url, exc)
+                return None
+            time.sleep(1 + attempt)
+    return None
+
+
 def post(url, *, data=None, headers=None, timeout=DEFAULT_TIMEOUT):
     try:
         resp = session().post(url, data=data, headers=headers, timeout=timeout)

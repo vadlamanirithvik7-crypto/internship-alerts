@@ -20,7 +20,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from poller import resolver
 from poller.matcher import process_new_postings
-from poller.sources import ats, discovery, search, simplify
+from poller.sources import ats, discovery, hackernews, reddit, search, simplify, trackers
 from poller.store import upsert_companies, upsert_postings
 from shared.db import Company, get_engine, get_session_factory, init_db, utcnow
 
@@ -104,12 +104,21 @@ def run(
         harvested_count = 0
         created = []
 
-        # 1. Tracker feeds - cheap (3 requests) and the highest-yield source.
+        # 1. Cross-company sources - trackers, HN, and Reddit list a direct apply
+        #    URL regardless of which ATS a company uses, so this is how we cover
+        #    the big employers (Google, Meta, ...) that aren't on the four ATS
+        #    APIs we poll directly. All cheap, and dedupe collapses the overlap.
         feed_postings = []
-        try:
-            feed_postings.extend(simplify.fetch())
-        except Exception as exc:
-            log.error("simplify failed: %s", exc)
+        for name, harvester in [
+            ("simplify", simplify.fetch),
+            ("trackers", trackers.fetch),
+            ("hackernews", hackernews.fetch),
+            ("reddit", reddit.fetch),
+        ]:
+            try:
+                feed_postings.extend(harvester() or [])
+            except Exception as exc:
+                log.error("%s failed: %s", name, exc)
 
         # 2. Broad keyword search - not bounded by the watchlist.
         if not skip_search:

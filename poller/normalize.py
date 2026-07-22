@@ -100,7 +100,7 @@ NON_US_TERMS = {
     "swiss", "austria", "poland", "polish", "portugal", "sweden", "swedish",
     "norway", "denmark", "danish", "finland", "czech", "czechia", "romania",
     "hungary", "greece", "turkey", "türkiye", "russia", "ukraine", "europe",
-    "european union", "emea",
+    "european union", "eu", "emea", "great britain",
     # Middle East & Africa
     "israel", "united arab emirates", "uae", "saudi arabia", "qatar", "egypt",
     "south africa", "nigeria", "kenya", "africa",
@@ -150,6 +150,21 @@ def _part_is_us(part: str) -> bool:
 
 def _part_is_non_us(part: str) -> bool:
     return any(re.search(rf"\b{re.escape(term)}\b", part) for term in NON_US_TERMS)
+
+
+def text_is_non_us(text: str) -> bool:
+    """True if free text (an HN/Reddit post) clearly names a non-US place and no US one.
+
+    Unlike is_us_location, this is for unstructured blurbs with no location field.
+    It is intentionally conservative - it only vetoes when a foreign signal is
+    present *and* nothing US-based is, so a US role is never dropped by accident.
+    """
+    if not text:
+        return False
+    text = text.lower()
+    if _part_is_us(text):
+        return False
+    return _part_is_non_us(text)
 
 
 def is_us_location(location) -> bool:

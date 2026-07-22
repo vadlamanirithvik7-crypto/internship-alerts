@@ -45,6 +45,7 @@ jobs:
           python3 tests/test_dedupe.py
           python3 tests/test_location.py
           python3 tests/test_simplify.py
+          python3 tests/test_trackers.py
 
       - name: Poll sources and send alerts
         env:
@@ -58,6 +59,9 @@ jobs:
           USAJOBS_API_KEY: ${{ secrets.USAJOBS_API_KEY }}
           USAJOBS_EMAIL: ${{ secrets.USAJOBS_EMAIL }}
           SEC_CONTACT_EMAIL: ${{ secrets.SEC_CONTACT_EMAIL }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REDDIT_CLIENT_ID: ${{ secrets.REDDIT_CLIENT_ID }}
+          REDDIT_CLIENT_SECRET: ${{ secrets.REDDIT_CLIENT_SECRET }}
         run: |
           python3 poller/main.py \
             --board-slice "${{ github.event.inputs.board_slice || '250' }}" \

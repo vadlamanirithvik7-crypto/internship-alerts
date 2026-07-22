@@ -19,6 +19,7 @@ FEEDS = [
     "https://raw.githubusercontent.com/SimplifyJobs/Summer2026-Internships/dev/.github/scripts/listings.json",
     "https://raw.githubusercontent.com/vanshb03/Summer2026-Internships/dev/.github/scripts/listings.json",
     "https://raw.githubusercontent.com/SimplifyJobs/New-Grad-Positions/dev/.github/scripts/listings.json",
+    "https://raw.githubusercontent.com/vanshb03/New-Grad-2026/dev/.github/scripts/listings.json",
 ]
 
 # We want internships and co-ops of any season, but not new-grad/full-time rows
@@ -43,6 +44,52 @@ def _wanted_term(terms) -> bool:
     return any(marker in joined for marker in WANTED_TERM_MARKERS)
 
 
+def postings_from_listings(data, *, source=SOURCE, seen_ids=None):
+    """Normalize a SimplifyJobs-schema listings.json payload into postings.
+
+    Exposed so any tracker repo publishing this same schema - the curated feeds
+    here and any auto-discovered fork - can be parsed by one code path. `seen_ids`
+    lets a caller dedupe listing ids across several feeds in a single run.
+    """
+    if not isinstance(data, list):
+        return []
+    if seen_ids is None:
+        seen_ids = set()
+
+    postings = []
+    for row in data:
+        if not isinstance(row, dict):
+            continue
+        if not row.get("active", True):
+            continue
+        if row.get("is_visible") is False:
+            continue
+        if not _wanted_term(row.get("terms")):
+            continue
+
+        url = row.get("url") or ""
+        listing_id = row.get("id") or url
+        if not url or listing_id in seen_ids:
+            continue
+        seen_ids.add(listing_id)
+
+        terms = row.get("terms") or []
+        postings.append(
+            make_posting(
+                external_id=listing_id,
+                company_name=row.get("company_name") or "",
+                title=row.get("title") or "",
+                url=url,
+                location=row.get("locations") or [],
+                source=source,
+                category_hint=row.get("category") or "",
+                term="; ".join(str(t) for t in terms),
+                posted_at=row.get("date_posted") or row.get("date_updated"),
+            )
+        )
+    return postings
+
+
 def fetch():
     """Return normalized postings from every configured feed."""
     postings = []
@@ -53,40 +100,8 @@ def fetch():
         if not isinstance(data, list):
             log.warning("simplify: no usable data from %s", feed_url)
             continue
-
-        kept = 0
-        for row in data:
-            if not isinstance(row, dict):
-                continue
-            if not row.get("active", True):
-                continue
-            if row.get("is_visible") is False:
-                continue
-            if not _wanted_term(row.get("terms")):
-                continue
-
-            url = row.get("url") or ""
-            listing_id = row.get("id") or url
-            if not url or listing_id in seen_ids:
-                continue
-            seen_ids.add(listing_id)
-
-            terms = row.get("terms") or []
-            postings.append(
-                make_posting(
-                    external_id=listing_id,
-                    company_name=row.get("company_name") or "",
-                    title=row.get("title") or "",
-                    url=url,
-                    location=row.get("locations") or [],
-                    source=SOURCE,
-                    category_hint=row.get("category") or "",
-                    term="; ".join(str(t) for t in terms),
-                    posted_at=row.get("date_posted") or row.get("date_updated"),
-                )
-            )
-            kept += 1
-
-        log.info("simplify: %s rows -> %s kept from %s", len(data), kept, feed_url)
+        kept = postings_from_listings(data, seen_ids=seen_ids)
+        postings.extend(kept)
+        log.info("simplify: %s rows -> %s kept from %s", len(data), len(kept), feed_url)
 
     return postings
