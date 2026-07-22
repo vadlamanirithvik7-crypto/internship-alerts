@@ -48,6 +48,137 @@ def is_remote(location: str, title: str = "") -> bool:
     return bool(REMOTE_PATTERN.search(f"{location or ''} {title or ''}"))
 
 
+# --------------------------------------------------------------------------
+# US-location filtering
+#
+# We can only surface roles based in the United States, so postings whose
+# location clearly names a foreign country/region are dropped before storage.
+# The policy is deliberately lenient: a posting is rejected only when it carries
+# a *positive* non-US signal and no US signal. Empty, "Remote", or otherwise
+# ambiguous locations are kept - a missing location is far more often a US role
+# with a vague board entry than a hidden foreign one.
+# --------------------------------------------------------------------------
+
+# Two-letter USPS abbreviations, matched only in the "City, ST" position so a
+# stray token (e.g. the "in" in "Berlin") can't be mistaken for a state.
+US_STATE_ABBREVS = {
+    "al", "ak", "az", "ar", "ca", "co", "ct", "de", "fl", "ga", "hi", "id",
+    "il", "in", "ia", "ks", "ky", "la", "me", "md", "ma", "mi", "mn", "ms",
+    "mo", "mt", "ne", "nv", "nh", "nj", "nm", "ny", "nc", "nd", "oh", "ok",
+    "or", "pa", "ri", "sc", "sd", "tn", "tx", "ut", "vt", "va", "wa", "wv",
+    "wi", "wy", "dc",
+}
+
+US_STATE_NAMES = {
+    "alabama", "alaska", "arizona", "arkansas", "california", "colorado",
+    "connecticut", "delaware", "florida", "georgia", "hawaii", "idaho",
+    "illinois", "indiana", "iowa", "kansas", "kentucky", "louisiana", "maine",
+    "maryland", "massachusetts", "michigan", "minnesota", "mississippi",
+    "missouri", "montana", "nebraska", "nevada", "new hampshire", "new jersey",
+    "new mexico", "new york", "north carolina", "north dakota", "ohio",
+    "oklahoma", "oregon", "pennsylvania", "rhode island", "south carolina",
+    "south dakota", "tennessee", "texas", "utah", "vermont", "virginia",
+    "washington", "west virginia", "wisconsin", "wyoming",
+    "district of columbia", "washington dc", "washington d.c.",
+    # US soil reachable without a passport.
+    "puerto rico", "guam", "us virgin islands", "u.s. virgin islands",
+}
+
+# Foreign countries, adjectives, subnational regions, and continents. Curated to
+# avoid substrings of US place names (e.g. no bare "mexico" that would swallow
+# "new mexico" - that state name is checked first and wins).
+NON_US_TERMS = {
+    # United Kingdom & Ireland
+    "united kingdom", "uk", "u.k.", "england", "scotland", "wales",
+    "northern ireland", "ireland", "britain", "british",
+    # Canada
+    "canada", "canadian", "ontario", "quebec", "québec", "alberta",
+    "british columbia", "manitoba", "saskatchewan", "nova scotia",
+    # Europe
+    "germany", "german", "deutschland", "france", "french", "spain", "spanish",
+    "italy", "italian", "netherlands", "dutch", "belgium", "switzerland",
+    "swiss", "austria", "poland", "polish", "portugal", "sweden", "swedish",
+    "norway", "denmark", "danish", "finland", "czech", "czechia", "romania",
+    "hungary", "greece", "turkey", "türkiye", "russia", "ukraine", "europe",
+    "european union", "emea",
+    # Middle East & Africa
+    "israel", "united arab emirates", "uae", "saudi arabia", "qatar", "egypt",
+    "south africa", "nigeria", "kenya", "africa",
+    # Asia-Pacific
+    "india", "indian", "china", "chinese", "hong kong", "taiwan", "japan",
+    "japanese", "south korea", "korea", "singapore", "malaysia", "indonesia",
+    "thailand", "vietnam", "philippines", "pakistan", "bangladesh",
+    "sri lanka", "australia", "australian", "new zealand", "apac",
+    "asia pacific", "asia",
+    # Latin America
+    "mexico city", "brazil", "brazilian", "argentina", "chile", "colombia",
+    "peru", "uruguay", "costa rica", "latin america", "latam",
+    # High-confidence foreign cities that often appear with no country. US
+    # namesakes (Berlin CT, Dublin OH, ...) carry a ", ST" tag and are caught
+    # by the US check, which runs first.
+    "london", "berlin", "munich", "münchen", "hamburg", "frankfurt", "cologne",
+    "köln", "stuttgart", "amsterdam", "rotterdam", "dublin", "toronto",
+    "ottawa", "montreal", "montréal", "vancouver", "calgary", "bengaluru",
+    "bangalore", "hyderabad", "mumbai", "pune", "chennai", "gurgaon",
+    "gurugram", "noida", "tokyo", "shanghai", "beijing", "shenzhen", "seoul",
+    "sydney", "melbourne", "tel aviv", "warsaw", "krakow", "kraków", "wrocław",
+    "prague", "bucharest", "budapest", "barcelona", "madrid", "lisbon",
+    "porto", "milan", "milano", "zurich", "zürich", "vienna", "copenhagen",
+    "stockholm", "oslo", "helsinki", "brussels", "istanbul", "dubai",
+    "são paulo", "sao paulo", "bogota", "bogotá", "buenos aires",
+    "kuala lumpur", "jakarta", "bangkok", "manila", "karachi", "lahore",
+    "dhaka", "cairo", "lagos", "nairobi", "johannesburg", "cape town",
+}
+
+# Splits a location into independent place candidates. Sources join multiple
+# locations with ";", "/", "|", or newlines.
+_LOCATION_PART = re.compile(r"[;/|\n]+")
+# "City, ST" or "City, ST 94105" - captures the two-letter state.
+_STATE_ABBREV = re.compile(r",\s*([a-z]{2})(?:[\s,]|\d|$)")
+# Standalone US country markers: "US", "U.S.", "USA", "U.S.A.".
+_US_MARKER = re.compile(r"(?:^|[\s,(])u\.?\s?s\.?a?\.?(?:$|[\s,)])")
+
+
+def _part_is_us(part: str) -> bool:
+    if "united states" in part or _US_MARKER.search(part):
+        return True
+    if any(name in part for name in US_STATE_NAMES):
+        return True
+    match = _STATE_ABBREV.search(part)
+    return bool(match and match.group(1) in US_STATE_ABBREVS)
+
+
+def _part_is_non_us(part: str) -> bool:
+    return any(re.search(rf"\b{re.escape(term)}\b", part) for term in NON_US_TERMS)
+
+
+def is_us_location(location) -> bool:
+    """True if a posting's location is acceptable as US-based.
+
+    Returns False only when the location has at least one place and every place
+    named is clearly outside the US. Empty and ambiguous locations pass, and a
+    single US-based option (e.g. "Remote, US; London") keeps the whole posting.
+    """
+    text = clean_location(location).lower()
+    if not text:
+        return True
+
+    verdict_seen = False
+    for part in _LOCATION_PART.split(text):
+        part = part.strip()
+        if not part:
+            continue
+        if _part_is_us(part):
+            return True
+        if not _part_is_non_us(part):
+            # Ambiguous option (e.g. "Remote") - benefit of the doubt.
+            return True
+        verdict_seen = True
+
+    # Every named place was foreign.
+    return not verdict_seen
+
+
 def clean_location(value) -> str:
     if not value:
         return ""

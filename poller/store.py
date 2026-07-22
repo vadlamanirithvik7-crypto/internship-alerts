@@ -9,7 +9,7 @@ from datetime import datetime
 
 from sqlalchemy import select
 
-from poller.normalize import detect_ats, workday_parts
+from poller.normalize import detect_ats, is_us_location, workday_parts
 from shared.db import Company, Posting, pack_list, raw_hash, utcnow
 from shared.sectors import is_internship, tag_posting
 
@@ -80,17 +80,21 @@ def upsert_companies(session, postings):
     return added
 
 
-def upsert_postings(session, postings, *, internships_only=True):
+def upsert_postings(session, postings, *, internships_only=True, us_only=True):
     """Insert postings not already stored. Returns the list of newly created rows."""
     if not postings:
         return []
 
-    # Filter to internships/co-ops and tag sectors before touching the database.
+    # Filter to US-based internships/co-ops and tag sectors before touching the
+    # database. A posting the user could never accept (foreign, or not an
+    # internship) is dropped here so it can never be stored or alerted.
     candidates = {}
     for posting in postings:
         if internships_only and not is_internship(
             posting.get("title", ""), posting.get("description", ""), posting.get("term", "")
         ):
+            continue
+        if us_only and not is_us_location(posting.get("location", "")):
             continue
         if not posting.get("company_name") or not posting.get("title"):
             continue
