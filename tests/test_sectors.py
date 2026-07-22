@@ -16,6 +16,8 @@ INTERNSHIP_CASES = [
     ("Summer 2026 Analyst Internship", True),
     ("Hardware Engineering Co-op", True),
     ("Electrical Engineering Co-Op - Fall 2026", True),
+    # Google's research-internship title names neither "intern" nor "co-op".
+    ("Student Researcher", True),
     # "intern" appears as a substring but the role is not an internship.
     ("Internal Audit Analyst", False),
     ("International Sales Manager", False),

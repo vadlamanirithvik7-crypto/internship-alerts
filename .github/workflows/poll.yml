@@ -43,6 +43,8 @@ jobs:
           python3 tests/test_sectors.py
           python3 tests/test_alerts.py
           python3 tests/test_dedupe.py
+          python3 tests/test_location.py
+          python3 tests/test_simplify.py
 
       - name: Poll sources and send alerts
         env:

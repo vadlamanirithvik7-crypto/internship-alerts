@@ -25,11 +25,21 @@ FEEDS = [
 # that share the same feed format.
 WANTED_TERM_MARKERS = ("summer", "fall", "spring", "winter", "co-op", "coop")
 
+# Placeholder values feeds use to mean "no season given". These must be treated
+# as missing term info, not as a real term - Google's "Student Researcher" rows
+# carry ['N/A'] and were being dropped here before the internship check ran.
+_PLACEHOLDER_TERMS = {"", "n/a", "na", "tbd", "tba", "none", "unknown", "-"}
+
 
 def _wanted_term(terms) -> bool:
-    if not terms:
-        return True  # no term info - let the internship keyword check decide
-    joined = " ".join(str(t) for t in terms).lower()
+    meaningful = [
+        str(t).strip()
+        for t in (terms or [])
+        if str(t).strip().lower() not in _PLACEHOLDER_TERMS
+    ]
+    if not meaningful:
+        return True  # no usable term info - let the internship keyword check decide
+    joined = " ".join(meaningful).lower()
     return any(marker in joined for marker in WANTED_TERM_MARKERS)
 
 

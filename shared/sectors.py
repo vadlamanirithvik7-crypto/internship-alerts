@@ -131,8 +131,8 @@ CATEGORY_HINT_MAP = {
 INTERNSHIP_MARKERS = [
     "intern", "internship", "co-op", "coop", "co op",
     "summer analyst", "student worker", "undergraduate research",
-    "industrial placement", "placement year", "apprentice",
-    "trainee", "工作实习",
+    "student researcher", "industrial placement", "placement year",
+    "apprentice", "trainee", "工作实习",
 ]
 
 # Terms that indicate a role we should NOT treat as an internship.
