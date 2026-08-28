@@ -29,6 +29,18 @@ TAGGING_CASES = [
     # (title, must_include, must_exclude)
     ("Analog IC Design Intern (VLSI)", {"semiconductor"}, set()),
     ("RTL Design Engineer Intern - SoC", {"computer_architecture"}, set()),
+    # ASIC design spans the front end, the back end, test and post-silicon.
+    ("ASIC Design Engineer Intern", {"asic_design"}, set()),
+    ("Design Verification Intern (UVM/SystemVerilog)", {"asic_design"}, set()),
+    ("Physical Design Co-op - Timing Closure", {"asic_design"}, set()),
+    ("DFT Intern - Scan Insertion and ATPG", {"asic_design"}, set()),
+    ("Post-Silicon Validation Intern", {"asic_design"}, set()),
+    ("Summer Intern, Place and Route / Floorplanning", {"asic_design"}, set()),
+    # Acronyms with a common non-ASIC meaning are deliberately not tokens, so
+    # these must stay clear of the ASIC bucket. See SECTORS["asic_design"].
+    ("CDC Public Health Intern", set(), {"asic_design"}),
+    ("Data Science Intern - EDA and Dashboards", set(), {"asic_design"}),
+    ("Staff Accountant Intern", set(), {"asic_design"}),
     ("Power Electronics Co-op - Inverter Design", {"power_electronics"}, set()),
     ("Robotics Perception Intern (SLAM, ROS2)", {"robotics"}, set()),
     ("Software Development Engineer Internship", {"software_tech"}, set()),

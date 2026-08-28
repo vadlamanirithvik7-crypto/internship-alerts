@@ -4,8 +4,8 @@ Watches a large set of company job boards and job feeds for new **internship and
 co-op** postings, tags them by sector, and alerts you when something matches your
 saved filters. Everything runs on free APIs — no paid services, no LLM/API credits.
 
-Sectors tracked: Software/Tech, Semiconductor, Computer Architecture, Power
-Electronics, Robotics, and a general Hardware bucket.
+Sectors tracked: Software/Tech, Semiconductor, ASIC Design, Computer Architecture,
+Power Electronics, Robotics, and a general Hardware bucket.
 
 ---
 

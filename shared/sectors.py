@@ -44,6 +44,50 @@ SECTORS = {
         ],
         "tokens": ["fab", "spice", "cadence", "synopsys"],
     },
+    "asic_design": {
+        "label": "ASIC Design",
+        "keywords": [
+            # Role names
+            "asic", "asic design", "asic designer", "asic engineer",
+            "asic architect", "asic verification", "chip design",
+            "silicon design", "digital design", "digital ic design",
+            "vlsi", "ip design", "ip verification",
+            # Front end - RTL and verification
+            "rtl design", "rtl engineer", "rtl coding",
+            "register transfer level", "soc design", "soc verification",
+            "design verification", "dv engineer", "verification engineer",
+            "functional verification", "formal verification",
+            "constrained random", "emulation engineer", "fpga prototyping",
+            "clock domain crossing",
+            # Back end - synthesis through signoff
+            "logic synthesis", "synthesis engineer", "physical design",
+            "place and route", "place & route", "floorplan", "floorplanning",
+            "clock tree", "clock tree synthesis", "static timing analysis",
+            "timing closure", "timing analysis", "physical verification",
+            "parasitic extraction", "standard cell", "custom layout",
+            "layout design", "layout engineer", "netlist", "gate level",
+            "rtl to gds", "rtl2gds", "signoff", "sign off", "tapeout",
+            "tape out",
+            # Test and low power
+            "design for test", "dft engineer", "scan insertion",
+            # Post silicon
+            "post silicon validation", "post silicon", "silicon validation",
+            "silicon bring up", "silicon bringup",
+            "low power design", "power intent",
+        ],
+        # Short forms are listed separately because _compile() anchors them at a
+        # word boundary, and tag_posting() matches descriptions as well as
+        # titles - so only acronyms with no common non-ASIC meaning belong here.
+        # Deliberately absent: "sta"/"pd" (fire on "staff"/"pdf"), "cdc" (the
+        # federal agency, which USAJOBS lists), "eda" (exploratory data analysis
+        # in data-science postings), "cts" (a large IT services company). The
+        # spelled-out keyword above covers each of those cases safely.
+        "tokens": [
+            "asic", "rtl", "uvm", "vlsi", "verilog", "systemverilog", "vhdl",
+            "atpg", "mbist", "jtag", "drc", "lvs", "upf", "pnr", "gds",
+            "gdsii", "dft",
+        ],
+    },
     "computer_architecture": {
         "label": "Computer Architecture",
         "keywords": [
