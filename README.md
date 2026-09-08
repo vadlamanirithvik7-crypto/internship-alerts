@@ -4,6 +4,16 @@ A phone-friendly internship discovery app with resume-aware semantic matching, e
 
 **Budget: $0.** No paid inference API, required API credits, paid database, or paid hosting plan. Optional services must remain within their free allowances. The public demo is separate from private data and notification credentials.
 
+## Hosted app
+
+Public recruiter demo: https://internship-alerts-1412.onrender.com/demo/
+
+Deployment verified September 8, 2026 on Render Free (512 MB, $0/month), from commit `6f85712` on `codex/expo-app`. Semantic ranking, source excerpts, and browser-local application saving work on the hosted service. The laptop is not needed. Free-instance cold starts may take 50 seconds or more.
+
+**Current mode is demo-only.** The live workspace still needs the existing worker's PostgreSQL `DATABASE_URL` and an `ADMIN_PASSWORD` entered privately in Render, followed by setting `DEMO_MODE=0`. Do not claim real alerts have been verified from this deployment. Existing scheduled polling continues on the default branch; the revised worker remains in draft PR #1 until rollout.
+
+Render service: `srv-dag8mauk1f9s7388sar0`. Use the service's Environment screen to set credentials; do not put them in this document, chat, or source control. The `/demo/` link remains valid when the protected live workspace is enabled.
+
 ## Run the expo demo
 
 ```bash
