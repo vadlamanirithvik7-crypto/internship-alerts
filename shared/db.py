@@ -22,6 +22,8 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     create_engine,
+    inspect,
+    text,
 )
 from sqlalchemy.orm import declarative_base, sessionmaker
 
@@ -75,6 +77,8 @@ class Company(Base):
     resolved = Column(Boolean, nullable=False, default=False)
     source_hint = Column(String(100), nullable=True)  # where we discovered it
     last_checked_at = Column(DateTime, nullable=True)
+    workday_host = Column(String(20), nullable=True)
+    priority = Column(Boolean, nullable=False, default=False, server_default="0")
 
 
 class Posting(Base):
@@ -95,6 +99,16 @@ class Posting(Base):
     posted_at = Column(DateTime, nullable=True)
     first_seen_at = Column(DateTime, nullable=False)
     raw_hash = Column(String(64), nullable=False)
+    description = Column(
+        Text, nullable=True
+    )  # NULL means legacy input was not retained
+    last_seen_at = Column(DateTime, nullable=True)
+    closed_at = Column(DateTime, nullable=True)
+    missing_sweeps = Column(Integer, nullable=False, default=0, server_default="0")
+    status = Column(String(30), nullable=False, default="new", server_default="new")
+    notes = Column(Text, nullable=False, default="", server_default="")
+    soft_key = Column(String(64), nullable=True, index=True)
+    alert_eligible = Column(Boolean, nullable=False, default=True, server_default="1")
 
     __table_args__ = (
         UniqueConstraint("raw_hash", name="uq_posting_raw_hash"),
@@ -118,7 +132,7 @@ class Filter(Base):
 
 
 class AlertSent(Base):
-    """One row per (posting, filter, channel) so a posting alerts at most once."""
+    """Receipt ledger, unique per (posting, filter, channel); transports are at-least-once."""
 
     __tablename__ = "alerts_sent"
 
@@ -133,6 +147,65 @@ class AlertSent(Base):
             "posting_id", "filter_id", "channel", name="uq_alert_once_per_channel"
         ),
     )
+
+
+class Delivery(Base):
+    """Durable outbox: external transports provide at-least-once delivery."""
+
+    __tablename__ = "deliveries"
+    id = Column(Integer, primary_key=True)
+    posting_id = Column(Integer, ForeignKey("postings.id"), nullable=False)
+    filter_id = Column(Integer, ForeignKey("filters.id"), nullable=False)
+    channel = Column(String(30), nullable=False)
+    state = Column(String(20), default="pending", nullable=False)
+    attempts = Column(Integer, default=0, nullable=False)
+    created_at = Column(DateTime, default=utcnow, nullable=False)
+    attempted_at = Column(DateTime)
+    __table_args__ = (UniqueConstraint("posting_id", "filter_id", "channel"),)
+
+
+class PollRun(Base):
+    __tablename__ = "poll_runs"
+    id = Column(Integer, primary_key=True)
+    started_at = Column(DateTime, default=utcnow, nullable=False)
+    finished_at = Column(DateTime)
+    state = Column(String(20), default="running", nullable=False)
+    harvested = Column(Integer, default=0, nullable=False)
+    new_postings = Column(Integer, default=0, nullable=False)
+    elapsed = Column(Integer, default=0, nullable=False)
+
+
+class SourceRun(Base):
+    __tablename__ = "source_runs"
+    id = Column(Integer, primary_key=True)
+    run_id = Column(Integer, ForeignKey("poll_runs.id"), nullable=False)
+    source = Column(String(80), nullable=False, index=True)
+    checked_at = Column(DateTime, default=utcnow, nullable=False)
+    count = Column(Integer, default=0, nullable=False)
+    state = Column(String(20), nullable=False, default="ok")
+    detail = Column(String(500), default="", nullable=False)
+    elapsed = Column(Integer, default=0, nullable=False)
+
+
+class ResumeProfile(Base):
+    __tablename__ = "resume_profiles"
+    id = Column(Integer, primary_key=True)
+    name = Column(String(120), nullable=False)
+    resume_text = Column(Text, nullable=False)
+    preferences = Column(Text, default="", nullable=False)
+    locations = Column(Text, default="", nullable=False)
+    term = Column(String(120), default="", nullable=False)
+    exclusions = Column(Text, default="", nullable=False)
+    remote_only = Column(Boolean, default=False, nullable=False)
+    updated_at = Column(DateTime, default=utcnow, nullable=False)
+
+
+class AICache(Base):
+    __tablename__ = "ai_cache"
+    key = Column(String(64), primary_key=True)
+    kind = Column(String(30), nullable=False)
+    payload = Column(Text, nullable=False)
+    created_at = Column(DateTime, default=utcnow, nullable=False)
 
 
 def get_engine(db_url: str = None):
@@ -150,5 +223,12 @@ def get_session_factory(engine=None):
 
 def init_db(engine=None):
     engine = engine or get_engine()
-    Base.metadata.create_all(engine)
+    # Serialize additive startup migrations on PostgreSQL. No drop/rewrite of data.
+    with engine.begin() as conn:
+        if engine.dialect.name == "postgresql":
+            conn.execute(text("SELECT pg_advisory_xact_lock(71429031)"))
+        from shared.migrations import migrate
+
+        migrate(conn)
+        Base.metadata.create_all(conn)
     return engine

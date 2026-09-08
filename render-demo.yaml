@@ -1,0 +1,17 @@
+# Separate free public demo: no production DB, alert credentials, or private resumes.
+services:
+  - type: web
+    name: internship-radar-demo
+    runtime: python
+    plan: free
+    branch: codex/expo-app
+    buildCommand: pip install -r requirements-ai.txt && python scripts/demo.py --warm
+    startCommand: DEMO_MODE=1 uvicorn backend.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /healthz
+    envVars:
+      - key: DEMO_MODE
+        value: "1"
+      - key: AI_ENABLED
+        value: "1"
+      - key: PYTHON_VERSION
+        value: "3.12.14"

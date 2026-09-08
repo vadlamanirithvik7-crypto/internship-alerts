@@ -19,18 +19,28 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from poller.normalize import canonical_url  # noqa: E402
 from poller.store import _identity  # noqa: E402
-from shared.db import AlertSent, Posting, get_engine, get_session_factory  # noqa: E402
+from shared.db import (
+    AlertSent,
+    Delivery,
+    Posting,
+    get_engine,
+    get_session_factory,
+    init_db,
+    raw_hash,
+)  # noqa: E402
 
 
 def _score(posting):
     """Prefer the richest record: a real ATS source over an aggregator, then the
     longer (less truncated) title, then the earliest sighting."""
-    source_rank = 1 if posting.source in ("greenhouse", "lever", "ashby", "workday") else 0
+    source_rank = (
+        1 if posting.source in ("greenhouse", "lever", "ashby", "workday") else 0
+    )
     return (source_rank, len(posting.title or ""), -(posting.id or 0))
 
 
 def dedupe(dry_run=False):
-    Session = get_session_factory(get_engine())
+    Session = get_session_factory(init_db(get_engine()))
 
     with Session() as session:
         postings = session.execute(select(Posting)).scalars().all()
@@ -50,8 +60,10 @@ def dedupe(dry_run=False):
         collisions = {k: v for k, v in groups.items() if len(v) > 1}
         removing = sum(len(v) - 1 for v in collisions.values())
 
-        print(f"{len(postings)} postings, {len(collisions)} duplicate groups, "
-              f"{removing} rows to remove")
+        print(
+            f"{len(postings)} postings, {len(collisions)} duplicate groups, "
+            f"{removing} rows to remove"
+        )
 
         for key, rows in list(collisions.items())[:8]:
             keeper = max(rows, key=_score)
@@ -63,10 +75,14 @@ def dedupe(dry_run=False):
         if dry_run:
             return removing
 
+        # Vacate old identities before choosing survivors; otherwise an autoflush
+        # can hit the unique hash owned by the soon-to-be-deleted duplicate.
+        for posting in postings:
+            posting.raw_hash = raw_hash("dedupe-temporary", str(posting.id))
+        session.flush()
         removed = 0
         for key, rows in collisions.items():
             keeper = max(rows, key=_score)
-            keeper.raw_hash = key
             for row in rows:
                 if row is keeper:
                     continue
@@ -86,14 +102,43 @@ def dedupe(dry_run=False):
                         session.delete(alert)
                     else:
                         alert.posting_id = keeper.id
+                for delivery in list(
+                    session.scalars(
+                        select(Delivery).where(Delivery.posting_id == row.id)
+                    )
+                ):
+                    existing = session.scalar(
+                        select(Delivery).where(
+                            Delivery.posting_id == keeper.id,
+                            Delivery.filter_id == delivery.filter_id,
+                            Delivery.channel == delivery.channel,
+                        )
+                    )
+                    if existing:
+                        if delivery.state == "sent":
+                            existing.state = "sent"
+                        session.delete(delivery)
+                    else:
+                        delivery.posting_id = keeper.id
+                if row.notes and row.notes not in (keeper.notes or ""):
+                    keeper.notes = "\n".join(filter(None, [keeper.notes, row.notes]))
+                if keeper.status == "new" and row.status != "new":
+                    keeper.status = row.status
+                keeper.first_seen_at = min(keeper.first_seen_at, row.first_seen_at)
+                if row.last_seen_at and (
+                    not keeper.last_seen_at or row.last_seen_at > keeper.last_seen_at
+                ):
+                    keeper.last_seen_at = row.last_seen_at
+                if len(row.description or "") > len(keeper.description or ""):
+                    keeper.description = row.description
                 session.flush()
                 session.delete(row)
                 removed += 1
 
+        session.flush()
         # Bring the survivors (and everything else) onto the new key scheme.
         for key, rows in groups.items():
-            if len(rows) == 1:
-                rows[0].raw_hash = key
+            max(rows, key=_score).raw_hash = key
 
         session.commit()
         print(f"\nremoved {removed} duplicate postings")

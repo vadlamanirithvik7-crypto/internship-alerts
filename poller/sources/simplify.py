@@ -60,11 +60,9 @@ def postings_from_listings(data, *, source=SOURCE, seen_ids=None):
     for row in data:
         if not isinstance(row, dict):
             continue
-        if not row.get("active", True):
-            continue
         if row.get("is_visible") is False:
             continue
-        if not _wanted_term(row.get("terms")):
+        if row.get("active", True) and not _wanted_term(row.get("terms")):
             continue
 
         url = row.get("url") or ""
@@ -87,6 +85,7 @@ def postings_from_listings(data, *, source=SOURCE, seen_ids=None):
                 posted_at=row.get("date_posted") or row.get("date_updated"),
             )
         )
+        postings[-1]["active"] = row.get("active", True)
     return postings
 
 

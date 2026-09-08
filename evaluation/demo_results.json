@@ -1,0 +1,105 @@
+{
+  "dataset": "Synthetic demo fixture with author-supplied judgments; not a held-out real-job benchmark.",
+  "split": "test",
+  "results": [
+    {
+      "profile": "Software engineering",
+      "method": "keywords",
+      "engine": "keyword fallback",
+      "judged_jobs": 18,
+      "precision_at_10": 0.8,
+      "ndcg_at_10": 0.9157,
+      "first_run_ms": 0.24,
+      "warm_ms": 0.13,
+      "paid_api_calls": 0
+    },
+    {
+      "profile": "Software engineering",
+      "method": "weighted",
+      "engine": "keyword fallback",
+      "judged_jobs": 18,
+      "precision_at_10": 0.8,
+      "ndcg_at_10": 0.9519,
+      "first_run_ms": 0.15,
+      "warm_ms": 0.14,
+      "paid_api_calls": 0
+    },
+    {
+      "profile": "Software engineering",
+      "method": "hybrid",
+      "engine": "semantic + keywords",
+      "judged_jobs": 18,
+      "precision_at_10": 0.8,
+      "ndcg_at_10": 0.986,
+      "first_run_ms": 642.29,
+      "warm_ms": 1.71,
+      "paid_api_calls": 0
+    },
+    {
+      "profile": "Embedded systems",
+      "method": "keywords",
+      "engine": "keyword fallback",
+      "judged_jobs": 18,
+      "precision_at_10": 0.4,
+      "ndcg_at_10": 0.9787,
+      "first_run_ms": 0.14,
+      "warm_ms": 0.13,
+      "paid_api_calls": 0
+    },
+    {
+      "profile": "Embedded systems",
+      "method": "weighted",
+      "engine": "keyword fallback",
+      "judged_jobs": 18,
+      "precision_at_10": 0.4,
+      "ndcg_at_10": 0.9787,
+      "first_run_ms": 0.17,
+      "warm_ms": 0.16,
+      "paid_api_calls": 0
+    },
+    {
+      "profile": "Embedded systems",
+      "method": "hybrid",
+      "engine": "semantic + keywords",
+      "judged_jobs": 18,
+      "precision_at_10": 0.4,
+      "ndcg_at_10": 0.9621,
+      "first_run_ms": 17.88,
+      "warm_ms": 1.64,
+      "paid_api_calls": 0
+    },
+    {
+      "profile": "Chip design",
+      "method": "keywords",
+      "engine": "keyword fallback",
+      "judged_jobs": 18,
+      "precision_at_10": 0.3,
+      "ndcg_at_10": 0.9745,
+      "first_run_ms": 0.14,
+      "warm_ms": 0.12,
+      "paid_api_calls": 0
+    },
+    {
+      "profile": "Chip design",
+      "method": "weighted",
+      "engine": "keyword fallback",
+      "judged_jobs": 18,
+      "precision_at_10": 0.3,
+      "ndcg_at_10": 0.9745,
+      "first_run_ms": 0.16,
+      "warm_ms": 0.18,
+      "paid_api_calls": 0
+    },
+    {
+      "profile": "Chip design",
+      "method": "hybrid",
+      "engine": "semantic + keywords",
+      "judged_jobs": 18,
+      "precision_at_10": 0.3,
+      "ndcg_at_10": 0.9947,
+      "first_run_ms": 17.76,
+      "warm_ms": 1.66,
+      "paid_api_calls": 0
+    }
+  ]
+}

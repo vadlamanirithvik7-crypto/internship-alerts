@@ -3,7 +3,7 @@ name: Poll for new internships
 on:
   schedule:
     # Every 30 minutes. GitHub may delay scheduled runs under load, which is fine -
-    # alerts are deduped, so a late or doubled run never re-notifies you.
+    # receipts dedupe completed sends; the outbox retries unsuccessful deliveries.
     - cron: "*/30 * * * *"
   workflow_dispatch:
     inputs:
@@ -34,18 +34,12 @@ jobs:
           cache: pip
 
       - name: Install dependencies
-        run: pip install -r requirements.txt
+        run: pip install -r requirements.txt pytest httpx numpy
 
       - name: Run tests
-        # Cheap guard: bad tagging rules mis-route every alert, and a non-latin-1
-        # job title used to crash delivery outright.
-        run: |
-          python3 tests/test_sectors.py
-          python3 tests/test_alerts.py
-          python3 tests/test_dedupe.py
-          python3 tests/test_location.py
-          python3 tests/test_simplify.py
-          python3 tests/test_trackers.py
+        env:
+          AI_ENABLED: "0"
+        run: python -m pytest -q
 
       - name: Poll sources and send alerts
         env:
@@ -54,6 +48,8 @@ jobs:
           ALERT_EMAIL_TO: ${{ secrets.ALERT_EMAIL_TO }}
           GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
           NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+          NTFY_TOKEN: ${{ secrets.NTFY_TOKEN }}
+          NTFY_BASE: ${{ secrets.NTFY_BASE }}
           ADZUNA_APP_ID: ${{ secrets.ADZUNA_APP_ID }}
           ADZUNA_APP_KEY: ${{ secrets.ADZUNA_APP_KEY }}
           USAJOBS_API_KEY: ${{ secrets.USAJOBS_API_KEY }}
@@ -96,7 +92,7 @@ jobs:
 
       - name: Install dependencies
         if: steps.slot.outputs.run == 'true'
-        run: pip install -r requirements.txt
+        run: pip install -r requirements.txt pytest httpx numpy
 
       - name: Discover and resolve companies
         if: steps.slot.outputs.run == 'true'

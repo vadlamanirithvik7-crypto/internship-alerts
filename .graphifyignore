@@ -1,0 +1,4 @@
+.venv/
+.model-cache/
+graphify-out/
+demo.db

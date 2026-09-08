@@ -1,115 +1,163 @@
-"""Match new postings against saved filters and dispatch alerts exactly once."""
+"""Durable alert outbox with retry, scoped ledger reads, and digest consolidation."""
 
 import logging
-from datetime import datetime
-
-from sqlalchemy import select
-
-from poller.alerts import send_email, send_ntfy
-from shared.db import AlertSent, Filter, unpack_list, utcnow
+from datetime import timedelta
+from urllib.parse import urlparse
+from sqlalchemy import exists, select
+from poller.alerts import send_email, send_ntfy_deliveries
+from shared.db import AlertSent, Delivery, Filter, Posting, unpack_list, utcnow
 
 log = logging.getLogger(__name__)
 
 
-def posting_matches(posting, filter_row) -> bool:
-    """Evaluate one posting against one saved filter.
-
-    Semantics: sectors OR keywords must hit (if either is specified), exclusions
-    always veto, and location/remote constraints must be satisfied.
-    """
-    haystack = f"{posting.title} {posting.company_name} {posting.location or ''}".lower()
-
-    excludes = unpack_list(filter_row.exclude_keywords)
-    if any(term in haystack for term in excludes):
+def posting_matches(posting, filter_row):
+    haystack = (
+        f"{posting.title} {posting.company_name} {posting.location or ''}".lower()
+    )
+    if any(term in haystack for term in unpack_list(filter_row.exclude_keywords)):
         return False
-
     if filter_row.remote_only and not posting.remote:
         return False
-
     locations = unpack_list(filter_row.locations)
-    if locations:
-        location_text = (posting.location or "").lower()
-        if not any(loc in location_text for loc in locations):
-            # A remote role satisfies any location constraint.
-            if not posting.remote:
-                return False
-
-    sectors = unpack_list(filter_row.sectors)
-    keywords = unpack_list(filter_row.keywords)
-
-    # A filter with neither sectors nor keywords matches everything that got
-    # past the exclusions - useful as a catch-all "any internship" filter.
-    if not sectors and not keywords:
-        return True
-
-    posting_sectors = set(unpack_list(posting.sector_tags))
-    if sectors and posting_sectors.intersection(sectors):
-        return True
-    if keywords and any(term in haystack for term in keywords):
-        return True
-
-    return False
+    if (
+        locations
+        and not posting.remote
+        and not any(loc in (posting.location or "").lower() for loc in locations)
+    ):
+        return False
+    sectors, keywords = (
+        unpack_list(filter_row.sectors),
+        unpack_list(filter_row.keywords),
+    )
+    return (
+        (not sectors and not keywords)
+        or bool(set(sectors) & set(unpack_list(posting.sector_tags)))
+        or any(k in haystack for k in keywords)
+    )
 
 
-def process_new_postings(session, postings):
-    """Alert on newly-seen postings. Returns {filter_name: count} actually alerted."""
-    if not postings:
-        return {}
+def _wrapper(p):
+    return (urlparse(p.url).hostname or "").lower() in {
+        "jobright.ai",
+        "www.jobright.ai",
+    }
 
-    filters = session.execute(select(Filter).where(Filter.active.is_(True))).scalars().all()
-    if not filters:
-        log.info("matcher: no active filters configured")
-        return {}
 
-    summary = {}
-    now = utcnow()
+def process_new_postings(session, postings=None, *, lookback_days=3):
+    """Compatibility name; candidates now come from DB even with no new inserts.
 
-    for filter_row in filters:
-        channels = unpack_list(filter_row.channels) or ["email"]
-        matched = [p for p in postings if posting_matches(p, filter_row)]
-        if not matched:
-            continue
-
-        # Skip anything already alerted for this filter/channel in an earlier run.
-        already = {
-            (posting_id, channel)
-            for posting_id, channel in session.execute(
-                select(AlertSent.posting_id, AlertSent.channel).where(
-                    AlertSent.filter_id == filter_row.id
-                )
+    Failed deliveries remain pending beyond the discovery lookback. Single poller
+    execution is required (workflow concurrency + PostgreSQL advisory lock).
+    SMTP/ntfy lack idempotency keys: a crash after send but before commit can repeat.
+    """
+    filters = list(session.scalars(select(Filter).where(Filter.active.is_(True))))
+    for f in filters:
+        for channel in set(unpack_list(f.channels) or ["email"]) & {"email", "ntfy"}:
+            query = select(Posting).where(
+                Posting.first_seen_at >= utcnow() - timedelta(days=lookback_days),
+                Posting.closed_at.is_(None),
+                Posting.alert_eligible.is_(True),
+                ~exists().where(
+                    AlertSent.posting_id == Posting.id,
+                    AlertSent.filter_id == f.id,
+                    AlertSent.channel == channel,
+                ),
+                ~exists().where(
+                    Delivery.posting_id == Posting.id,
+                    Delivery.filter_id == f.id,
+                    Delivery.channel == channel,
+                ),
             )
-        }
-
-        for channel in channels:
-            pending = [p for p in matched if (p.id, channel) not in already]
-            if not pending:
-                continue
-
-            if channel == "email":
-                ok = send_email(
-                    pending,
-                    subject=f"{len(pending)} new internship match{'es' if len(pending) != 1 else ''} - {filter_row.name}",
-                )
-            elif channel == "ntfy":
-                ok = send_ntfy(pending)
-            else:
-                log.warning("matcher: unknown channel %r", channel)
-                continue
-
-            if not ok:
-                # Don't record a send that didn't happen - retry next run instead.
-                continue
-
-            for posting in pending:
-                session.add(
-                    AlertSent(
-                        posting_id=posting.id,
-                        filter_id=filter_row.id,
-                        channel=channel,
-                        sent_at=now,
+            for p in session.scalars(query):
+                if posting_matches(p, f):
+                    session.add(
+                        Delivery(posting_id=p.id, filter_id=f.id, channel=channel)
+                    )
+    session.commit()  # outbox survives process/transport failure
+    work = list(
+        session.execute(
+            select(Delivery, Posting, Filter)
+            .join(Posting, Delivery.posting_id == Posting.id)
+            .join(Filter, Delivery.filter_id == Filter.id)
+            .where(Delivery.state == "pending", Filter.active.is_(True))
+            .order_by(Delivery.id)
+        )
+    )
+    grouped = {"email": [], "ntfy": []}
+    seen = {}
+    deferred = []
+    for d, p, f in sorted(work, key=lambda row: _wrapper(row[1])):
+        if (
+            p.closed_at
+            or not posting_matches(p, f)
+            or d.channel not in (unpack_list(f.channels) or ["email"])
+        ):
+            d.state = "cancelled"
+            continue
+        # Suppress only wrapper/direct pairs with an exact soft key. Distinct ATS
+        # requisitions keep separate alerts even when titles and locations match.
+        key = (f.id, d.channel, p.soft_key)
+        peers = []
+        if p.soft_key:
+            peers = list(
+                session.scalars(
+                    select(Posting)
+                    .join(AlertSent, AlertSent.posting_id == Posting.id)
+                    .where(
+                        Posting.soft_key == p.soft_key,
+                        AlertSent.filter_id == f.id,
+                        AlertSent.channel == d.channel,
                     )
                 )
-            summary[f"{filter_row.name}/{channel}"] = len(pending)
-
-    session.flush()
+            )
+        if any(_wrapper(peer) != _wrapper(p) for peer in peers):
+            d.state = "suppressed"
+            continue
+        if p.soft_key and key in seen and _wrapper(seen[key][1]) != _wrapper(p):
+            deferred.append((d, seen[key][0]))
+            continue
+        seen[key] = (d, p)
+        grouped[d.channel].append((d, p, f))
+    summary = {}
+    for channel, rows in grouped.items():
+        if not rows:
+            continue
+        unique = {p.id: p for _, p, _ in rows}
+        for d, _, _ in rows:
+            d.attempts += 1
+            d.attempted_at = utcnow()
+        session.commit()
+        try:
+            if channel == "email":
+                groups = {}
+                for _, p, f in rows:
+                    groups.setdefault(f.name, {})[p.id] = p
+                ok = send_email(
+                    list(unique.values()),
+                    groups={name: list(ps.values()) for name, ps in groups.items()},
+                )
+                delivered = set(unique) if ok else set()
+            else:
+                delivered = send_ntfy_deliveries(list(unique.values()))
+        except Exception:
+            log.exception("delivery failed; outbox remains pending")
+            delivered = set()
+        for d, p, f in rows:
+            if p.id in delivered:
+                d.state = "sent"
+                session.add(
+                    AlertSent(
+                        posting_id=p.id,
+                        filter_id=f.id,
+                        channel=channel,
+                        sent_at=utcnow(),
+                    )
+                )
+                name = f"{f.name}/{channel}"
+                summary[name] = summary.get(name, 0) + 1
+        session.commit()
+    for duplicate, original in deferred:
+        if original.state == "sent":
+            duplicate.state = "suppressed"
+    session.commit()
     return summary
