@@ -1,5 +1,6 @@
 /* Public demo only. Never cache private workspace responses. */
-const CACHE = "radar-expo-v1";
+const PREFIX = new URL(self.registration.scope).pathname.replace(/\/$/, "");
+const CACHE = "radar-expo-v2" + PREFIX;
 const BASIC = [
   "/",
   "/applications",
@@ -13,7 +14,7 @@ const BASIC = [
   "/static/style.css",
   "/static/app.js",
   "/static/icon.svg",
-  "/static/offline.html",
+  "/offline",
   "/manifest.webmanifest",
 ];
 const ROUTES = [...BASIC];
@@ -27,7 +28,8 @@ self.addEventListener("install", (event) =>
   event.waitUntil(
     (async () => {
       const cache = await caches.open(CACHE);
-      for (const path of ROUTES) {
+      for (const route of ROUTES) {
+        const path = PREFIX + route;
         const response = await fetch(path);
         if (!response.ok || response.headers.get("X-Radar-Mode") !== "demo")
           throw new Error("Demo response required");
@@ -41,7 +43,11 @@ self.addEventListener("activate", (event) =>
   event.waitUntil(
     (async () => {
       for (const key of await caches.keys())
-        if (key.startsWith("radar-expo-") && key !== CACHE)
+        if (
+          key.startsWith("radar-expo-") &&
+          key.endsWith(PREFIX) &&
+          key !== CACHE
+        )
           await caches.delete(key);
       await self.clients.claim();
       for (const client of await self.clients.matchAll())
@@ -51,12 +57,16 @@ self.addEventListener("activate", (event) =>
 );
 self.addEventListener("fetch", (event) => {
   const req = event.request;
-  if (req.method !== "GET" || new URL(req.url).origin !== self.location.origin)
+  if (
+    req.method !== "GET" ||
+    new URL(req.url).origin !== self.location.origin ||
+    !new URL(req.url).pathname.startsWith(PREFIX + "/")
+  )
     return;
   event.respondWith(
     (async () => {
       const cache = await caches.open(CACHE);
-      if (new URL(req.url).pathname.startsWith("/static/")) {
+      if (new URL(req.url).pathname.startsWith(PREFIX + "/static/")) {
         const asset = await cache.match(req);
         if (asset) return asset;
       }
@@ -74,7 +84,7 @@ self.addEventListener("fetch", (event) => {
         return (
           (await cache.match(req)) ||
           (req.mode === "navigate"
-            ? await cache.match("/static/offline.html")
+            ? await cache.match(PREFIX + "/offline")
             : Response.error())
         );
       }

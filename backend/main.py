@@ -51,14 +51,24 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 DEMO = os.environ.get("DEMO_MODE") == "1"
 app = FastAPI(title="Internship Radar")
+demo_app = FastAPI(title="Internship Radar Demo")
 
 
 @app.middleware("http")
+@demo_app.middleware("http")
 async def access_control(request, call_next):
-    if request.url.path not in ("/healthz",) and not request.url.path.startswith(
-        "/static/"
+    # The mounted demo has its own auth boundary and database dependency.
+    if request.app is app and (
+        request.url.path == "/demo" or request.url.path.startswith("/demo/")
     ):
-        if DEMO:
+        return await call_next(request)
+    request.state.demo = DEMO or request.app is demo_app
+    route_path = (
+        request.scope["path"].removeprefix(request.scope.get("root_path", "")) or "/"
+    )
+    request.state.route_path = route_path
+    if route_path not in ("/healthz",) and not route_path.startswith("/static/"):
+        if request.state.demo:
             if request.method not in ("GET", "HEAD"):
                 return JSONResponse(
                     {"detail": "Demo changes stay on your device."}, status_code=403
@@ -100,13 +110,11 @@ async def access_control(request, call_next):
                 if origin and urlparse(origin).netloc != request.url.netloc:
                     return Response(status_code=403)
     response = await call_next(request)
-    response.headers["X-Radar-Mode"] = "demo" if DEMO else "private"
+    response.headers["X-Radar-Mode"] = "demo" if request.state.demo else "private"
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["Referrer-Policy"] = "same-origin"
     response.headers["Cache-Control"] = (
-        "no-store"
-        if not request.url.path.startswith("/static/")
-        else "public, max-age=3600"
+        "no-store" if not route_path.startswith("/static/") else "public, max-age=3600"
     )
     return response
 
@@ -114,23 +122,32 @@ async def access_control(request, call_next):
 app.mount(
     "/static", StaticFiles(directory=os.path.join(BASE_DIR, "static")), name="static"
 )
-templates = Jinja2Templates(directory=os.path.join(BASE_DIR, "templates"))
+templates = Jinja2Templates(
+    directory=os.path.join(BASE_DIR, "templates"),
+    context_processors=[
+        lambda request: {
+            "demo": request.state.demo,
+            "base_path": request.scope.get("root_path", ""),
+            "route_path": request.state.route_path,
+        }
+    ],
+)
 
-if DEMO:
-    # Public demo cannot accidentally expose a configured production database.
-    engine = init_db(get_engine("sqlite:///demo.db"))
-    from scripts.demo import seed
+# Demo samples are isolated even when this process also serves a live database.
+from scripts.demo import seed
 
-    seed(engine)
-else:
-    engine = init_db(get_engine())
+demo_engine = init_db(get_engine("sqlite:///demo.db"))
+seed(demo_engine)
+DemoSessionFactory = get_session_factory(demo_engine)
+engine = demo_engine if DEMO else init_db(get_engine())
 SessionFactory = get_session_factory(engine)
 
 PAGE_SIZE = 20
 
 
-def get_db():
-    session = SessionFactory()
+def get_db(request: Request):
+    factory = DemoSessionFactory if request.state.demo else SessionFactory
+    session = factory()
     try:
         yield session
     finally:
@@ -286,7 +303,23 @@ def postings_partial(request: Request, page: int = Query(1, ge=1), db=Depends(ge
 @app.get("/filters")
 def filters_page(request: Request, db=Depends(get_db)):
     rows = db.execute(select(Filter).order_by(Filter.id)).scalars().all()
-    return templates.TemplateResponse(request, "filters.html", {"filters": rows})
+    deliveries = db.execute(
+        select(Delivery, Posting.title, Filter.name)
+        .join(Posting, Posting.id == Delivery.posting_id)
+        .join(Filter, Filter.id == Delivery.filter_id)
+        .order_by(Delivery.created_at.desc(), Delivery.id.desc())
+        .limit(30)
+    ).all()
+    last_run = db.scalar(select(PollRun).order_by(PollRun.started_at.desc()))
+    return templates.TemplateResponse(
+        request,
+        "filters.html",
+        {
+            "filters": rows,
+            "deliveries": deliveries,
+            "last_run": last_run,
+        },
+    )
 
 
 @app.post("/filters")
@@ -433,7 +466,7 @@ def applications(request: Request, db=Depends(get_db)):
             .order_by(Posting.first_seen_at.desc())
         )
     )
-    if DEMO:
+    if request.state.demo:
         rows = list(db.scalars(select(Posting).order_by(Posting.first_seen_at.desc())))
     return templates.TemplateResponse(request, "applications.html", {"postings": rows})
 
@@ -537,18 +570,20 @@ def about(request: Request):
 
 
 @app.get("/manifest.webmanifest")
-def manifest():
+def manifest(request: Request):
+    prefix = request.scope.get("root_path", "")
     return JSONResponse(
         {
             "name": "Internship Radar",
             "short_name": "Radar",
-            "start_url": "/",
+            "start_url": prefix + "/",
+            "scope": prefix + "/",
             "display": "standalone",
             "background_color": "#f5f6f8",
             "theme_color": "#102e30",
             "icons": [
                 {
-                    "src": "/static/icon.svg",
+                    "src": prefix + "/static/icon.svg",
                     "sizes": "any",
                     "type": "image/svg+xml",
                     "purpose": "any",
@@ -559,11 +594,29 @@ def manifest():
 
 
 @app.get("/sw.js")
-def service_worker():
-    if not DEMO:
+def service_worker(request: Request):
+    if not request.state.demo:
         raise HTTPException(404)
     return FileResponse(
         os.path.join(BASE_DIR, "static", "sw.js"),
         media_type="application/javascript",
-        headers={"Service-Worker-Allowed": "/", "Cache-Control": "no-cache"},
+        headers={
+            "Service-Worker-Allowed": request.scope.get("root_path", "") + "/",
+            "Cache-Control": "no-cache",
+        },
     )
+
+
+@app.get("/offline")
+def offline_page(request: Request):
+    if not request.state.demo:
+        raise HTTPException(404)
+    return templates.TemplateResponse(request, "offline.html", {})
+
+
+# Reuse route handlers, but keep the mounted app's session/auth state separate.
+demo_app.include_router(app.router)
+demo_app.mount(
+    "/static", StaticFiles(directory=os.path.join(BASE_DIR, "static")), name="static"
+)
+app.mount("/demo", demo_app)

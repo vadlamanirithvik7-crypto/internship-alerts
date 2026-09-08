@@ -13,7 +13,7 @@ python3.12 -m venv .venv
 DEMO_MODE=1 .venv/bin/uvicorn backend.main:app --host 0.0.0.0 --port 8000
 ```
 
-Open `http://localhost:8000`. On a phone on the same Wi-Fi, use your computer's LAN IP and port 8000. For access away from the computer, deploy the separate **free** service in `render-demo.yaml`; do not attach a production database or alert credentials. Render's free service can sleep, so open the URL before your conversation. The demo service worker saves the three profiles and job pages for offline use after its first successful load. Wait for “Demo saved for offline use.” Arbitrary searches not previously cached show an offline page with links to the saved demo. HTTPS is required for service workers outside localhost.
+Open `http://localhost:8000`. On a phone on the same Wi-Fi, use your computer's LAN IP and port 8000. For access away from the computer, deploy the single **free** service in `render.yaml` and share its `/demo/` URL. `render-demo.yaml` remains an alternative for demo-only hosting; do not deploy both if you want to reserve free instance hours. Render's free service can sleep, so open the URL before your conversation. The demo service worker saves the three profiles and job pages for offline use after its first successful load. Wait for “Demo saved for offline use.” Arbitrary searches not previously cached show an offline page with links to the saved demo. HTTPS is required for service workers outside localhost.
 
 The fictional dataset includes 18 roles and three sample profiles. Scores are produced by the actual embedding model. Job/company/source observations are clearly labeled as sample data. Saves, stages, and notes persist only in the visitor's browser; the public demo cannot modify production data. Do not present fictional employers or the synthetic evaluation as real usage.
 
@@ -21,7 +21,20 @@ Phone walkthrough (about one minute):
 1. Start with **Software engineering**, open the top role, and point out the resume/job excerpts.
 2. Switch to **Embedded systems** to demonstrate personalized ranking.
 3. Save a role, change its application stage, and open **Saved**.
-4. Open **Health** or **Behind the build** to discuss retries, deduplication, and deployment.
+4. Open **Alerts** or **Behind the build** to discuss retries, deduplication, and deployment.
+
+## Fully online, $0 deployment
+
+Use **one** Render Free web service (`render.yaml`), the existing external Supabase Free PostgreSQL database, and the existing GitHub Actions scheduled worker in this public repository. No paid instance, Render database, disk, custom domain, or inference subscription is needed. Confirm both hosting/database accounts remain on Free and do not enable automatic paid upgrades.
+
+1. Deploy the tested branch/merged main with `render.yaml`. Set `DATABASE_URL` to the **same** database used by the GitHub Actions secret. Set a strong `ADMIN_PASSWORD` in Render; never put credentials in a URL or the repository.
+2. `/` is the protected working app: real roles, resume uploads, cloud-saved applications, company priorities, alert filters, and delivery history. `/demo/` is the public recruiter walkthrough using isolated fictional data. It cannot read the live database or change alert settings.
+3. The build downloads the free local embedding model and warms the demo. Live resume/job vectors are cached in PostgreSQL. Alert credentials belong only in Actions, not in the public demo.
+4. Merge the tested workflow onto the default branch to activate the new scheduled poller. Existing `DATABASE_URL`, `ALERT_EMAIL_FROM`, `ALERT_EMAIL_TO`, `GMAIL_APP_PASSWORD`, and `NTFY_TOPIC` secrets supply storage and notification delivery. Optional `NTFY_TOKEN` and `NTFY_BASE` support an authenticated/custom ntfy service.
+5. Open the protected `/filters` page, choose sectors/keywords/locations and channels, and create an active filter. Subscribe to the configured topic in the ntfy phone app to receive pushes; email goes to the configured recipient. The UI shows queued/completed deliveries. Filters and resume ranking are separate controls.
+6. Verify a scheduled poll finishes, live roles appear in the browser, and a naturally matching new role produces a recorded delivery received on the intended channel. Fixture tests do not establish live transport delivery.
+
+Render Free sleeps after 15 idle minutes and shares 750 instance hours per workspace/month. Alerts run in Actions independently of the sleeping website; schedules can be delayed. Free Supabase projects can pause after low activity. A Cloudflare quick tunnel is only a temporary development preview and still needs the laptop running. Nothing here promises an always-awake service or instant alerts.
 
 ## Private workspace
 

@@ -1,5 +1,6 @@
 "use strict";
 const demo = document.body.dataset.demo === "true";
+const basePath = document.body.dataset.basePath || "";
 const storageKey = "radar-demo-v1";
 let saved = {};
 try {
@@ -48,7 +49,7 @@ document.querySelectorAll("[data-save]").forEach((button) => {
       saved[id] = { ...saved[id], status };
       persist();
     } else {
-      const response = await fetch(`/jobs/${id}/status`, {
+      const response = await fetch(`${basePath}/jobs/${id}/status`, {
         method: "POST",
         body: new URLSearchParams({ status }),
       });
@@ -123,7 +124,7 @@ if (demo)
     );
 if ("serviceWorker" in navigator) {
   if (demo) {
-    navigator.serviceWorker.register("/sw.js").catch(() => {});
+    navigator.serviceWorker.register(`${basePath}/sw.js`).catch(() => {});
     navigator.serviceWorker.addEventListener("message", (event) => {
       if (event.data === "radar-offline-ready")
         toast("Demo saved for offline use");
@@ -131,7 +132,11 @@ if ("serviceWorker" in navigator) {
   } else {
     navigator.serviceWorker.getRegistrations().then((registrations) =>
       registrations.forEach((r) => {
-        if (r.active?.scriptURL.endsWith("/sw.js")) r.unregister();
+        if (
+          r.scope === new URL("/", location.href).href &&
+          r.active?.scriptURL.endsWith("/sw.js")
+        )
+          r.unregister();
       }),
     );
   }

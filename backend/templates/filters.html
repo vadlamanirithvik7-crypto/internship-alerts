@@ -1,14 +1,19 @@
 {% extends "base.html" %}
-{% block title %}Alert filters{% endblock %}
+{% block title %}Internship alerts{% endblock %}
 {% block content %}
 <div class="page-head">
-  <h1>Alert filters</h1>
+  <h1>Internship alerts</h1>
   <p class="muted">Each active filter is checked on every poll. New postings that match get pushed to the channels you pick.</p>
 </div>
-
+<div class="panel" style="margin-bottom:24px">
+  <h2>Always watching for your next opportunity</h2>
+  <p>Checks are scheduled every 30 minutes. Delivery may be delayed by the scheduler or a source outage. Matching new roles go to your configured email or ntfy phone subscription.</p>
+  <p class="muted">{% if last_run %}Last check: {{last_run.started_at.strftime('%b %d, %H:%M')}} UTC · {{last_run.state}} · {{last_run.new_postings}} new roles{% else %}Waiting for the first recorded poll. Configure the scheduled worker to use the same database as this app.{% endif %}</p>
+  {% if not demo %}<p class="hint">Notification destinations are configured privately in the scheduled worker. Resume ranking changes the feed; alert filters below independently control notifications.</p>{% endif %}
+</div>
 <div class="layout">
   <aside class="sidebar">
-    <form method="post" action="/filters">
+    <form method="post" action="{{base_path}}/filters">
       <h2 class="form-title">New filter</h2>
 
       <div class="field">
@@ -90,10 +95,10 @@
           <div><dt>Channels</dt><dd>{{ f.channels | unpack | join(', ') or 'email' }}</dd></div>
         </dl>
         <div class="filter-actions">
-          <form method="post" action="/filters/{{ f.id }}/toggle">
+          <form method="post" action="{{base_path}}/filters/{{ f.id }}/toggle">
             <button type="submit">{{ 'Pause' if f.active else 'Resume' }}</button>
           </form>
-          <form method="post" action="/filters/{{ f.id }}/delete"
+          <form method="post" action="{{base_path}}/filters/{{ f.id }}/delete"
                 onsubmit="return confirm('Delete this filter?')">
             <button type="submit" class="btn-danger">Delete</button>
           </form>
@@ -103,4 +108,6 @@
     </ul>
   </section>
 </div>
+<section class="panel" style="margin-top:24px"><h2>Recent alert deliveries</h2>
+{% for delivery,title,filter_name in deliveries %}<div class="filter-card"><strong>{{title}}</strong><p>{{filter_name}} · {{delivery.channel}} · {{delivery.state}} · {{delivery.attempts}} attempt{{'s' if delivery.attempts != 1 else ''}}</p><small>{{delivery.created_at.strftime('%b %d, %H:%M')}} UTC</small></div>{% else %}<p class="muted">No deliveries recorded yet. Matching roles appear here when the worker queues them.</p>{% endfor %}</section>
 {% endblock %}
