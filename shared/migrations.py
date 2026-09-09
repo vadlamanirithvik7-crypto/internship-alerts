@@ -1,6 +1,6 @@
 """Idempotent additive migration for existing SQLite and PostgreSQL databases."""
 
-from sqlalchemy import inspect, text
+from sqlalchemy import bindparam, inspect, text
 
 ADDITIONS = {
     "companies": {
@@ -57,18 +57,16 @@ def migrate(conn):
                 )
                 if not rows:
                     break
-                conn.execute(
-                    text("UPDATE postings SET target_eligible=:value WHERE id=:id"),
-                    [
-                        {
-                            "id": r["id"],
-                            "value": eligible(
-                                r["title"], r["location"], r["term"], r["description"]
-                            ),
-                        }
-                        for r in rows
-                    ],
-                )
+                groups = {True: [], False: []}
+                for r in rows:
+                    groups[eligible(r["title"], r["location"], r["term"], r["description"])].append(r["id"])
+                # Two set-based writes per batch, not one network round trip per
+                # historical posting on a remotely hosted PostgreSQL database.
+                for value, ids in groups.items():
+                    if ids:
+                        conn.execute(text(
+                            "UPDATE postings SET target_eligible=:value WHERE id IN :ids"
+                        ).bindparams(bindparam("ids", expanding=True)), {"value": value, "ids": ids})
             conn.execute(
                 text(
                     "CREATE INDEX IF NOT EXISTS ix_postings_target_eligible ON postings (target_eligible)"
