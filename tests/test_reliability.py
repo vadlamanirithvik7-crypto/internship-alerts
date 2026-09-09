@@ -188,7 +188,17 @@ def test_migration_preserves_existing_data_and_repeats():
             )
         )
     init_db(engine)
-    init_db(engine)
+    from sqlalchemy import event
+    startup_writes = []
+    def capture_startup(conn, cursor, statement, parameters, context, executemany):
+        if statement.lstrip().split()[0].upper() in {"ALTER", "CREATE", "UPDATE", "REVOKE"}:
+            startup_writes.append(statement)
+    event.listen(engine, "before_cursor_execute", capture_startup)
+    try:
+        init_db(engine)
+    finally:
+        event.remove(engine, "before_cursor_execute", capture_startup)
+    assert startup_writes == [], "A fully upgraded restart must not lock app tables for DDL"
     with engine.connect() as c:
         assert c.scalar(text("SELECT name FROM companies")) == "Legacy"
         assert c.scalar(text("SELECT priority FROM companies")) == 0
@@ -262,7 +272,17 @@ def test_postgres_schema_upgrade_when_available():
             )
         )
     init_db(engine)
-    init_db(engine)
+    from sqlalchemy import event
+    startup_writes = []
+    def capture_startup(conn, cursor, statement, parameters, context, executemany):
+        if statement.lstrip().split()[0].upper() in {"ALTER", "CREATE", "UPDATE", "REVOKE"}:
+            startup_writes.append(statement)
+    event.listen(engine, "before_cursor_execute", capture_startup)
+    try:
+        init_db(engine)
+    finally:
+        event.remove(engine, "before_cursor_execute", capture_startup)
+    assert startup_writes == [], "A PostgreSQL restart must not take migration table locks"
     with engine.connect() as c:
         from shared.db import Base
 

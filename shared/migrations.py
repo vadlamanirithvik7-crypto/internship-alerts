@@ -33,16 +33,11 @@ def migrate(conn):
             if column not in columns:
                 conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {column} {ddl}"))
         if table == "postings":
-            conn.execute(
-                text(
-                    "UPDATE postings SET last_seen_at = first_seen_at WHERE last_seen_at IS NULL"
-                )
-            )
-            conn.execute(
-                text(
-                    "CREATE INDEX IF NOT EXISTS ix_postings_soft_key ON postings (soft_key)"
-                )
-            )
+            if conn.scalar(text("SELECT 1 FROM postings WHERE last_seen_at IS NULL LIMIT 1")):
+                conn.execute(text("UPDATE postings SET last_seen_at = first_seen_at WHERE last_seen_at IS NULL"))
+            indexes = {index["name"] for index in inspect(conn).get_indexes("postings")}
+            if "ix_postings_soft_key" not in indexes:
+                conn.execute(text("CREATE INDEX ix_postings_soft_key ON postings (soft_key)"))
             from shared.eligibility import eligible
 
             while True:
@@ -67,8 +62,5 @@ def migrate(conn):
                         conn.execute(text(
                             "UPDATE postings SET target_eligible=:value WHERE id IN :ids"
                         ).bindparams(bindparam("ids", expanding=True)), {"value": value, "ids": ids})
-            conn.execute(
-                text(
-                    "CREATE INDEX IF NOT EXISTS ix_postings_target_eligible ON postings (target_eligible)"
-                )
-            )
+            if "ix_postings_target_eligible" not in indexes:
+                conn.execute(text("CREATE INDEX ix_postings_target_eligible ON postings (target_eligible)"))

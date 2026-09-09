@@ -251,11 +251,24 @@ def init_db(engine=None):
             # Protect new tables in the same transaction as their creation.
             roles = set(conn.scalars(text("SELECT rolname FROM pg_roles")))
             quote = conn.dialect.identifier_preparer.quote
+            secured = set(conn.scalars(text(
+                "SELECT relname FROM pg_class WHERE relnamespace=current_schema()::regnamespace AND relrowsecurity"
+            )))
+            exposed = {}
+            for role in ("anon", "authenticated"):
+                if role in roles:
+                    exposed[role] = set(conn.scalars(text(
+                        "SELECT name FROM unnest(CAST(:tables AS text[])) AS t(name) "
+                        "WHERE has_table_privilege(:role, name, 'SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER')"
+                    ), {"tables": list(Base.metadata.tables), "role": role}))
             for table in Base.metadata.sorted_tables:
                 name = quote(table.name)
-                conn.execute(text(f"ALTER TABLE {name} ENABLE ROW LEVEL SECURITY"))
+                # Avoid taking AccessExclusive table locks on every web wakeup
+                # while the alert worker is writing companies and postings.
+                if table.name not in secured:
+                    conn.execute(text(f"ALTER TABLE {name} ENABLE ROW LEVEL SECURITY"))
                 for role in ("anon", "authenticated"):
-                    if role in roles:
+                    if table.name in exposed.get(role, set()):
                         conn.execute(
                             text(f"REVOKE ALL ON TABLE {name} FROM {quote(role)}")
                         )
