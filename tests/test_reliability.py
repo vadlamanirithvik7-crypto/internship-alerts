@@ -245,6 +245,17 @@ def test_postgres_schema_upgrade_when_available():
     assert engine.url.database == "radar_test"
     _create_legacy_schema(engine)
     with engine.begin() as c:
+        for role in ("anon", "authenticated"):
+            if not c.scalar(
+                text("SELECT 1 FROM pg_roles WHERE rolname=:role"), {"role": role}
+            ):
+                c.execute(text(f"CREATE ROLE {role} NOLOGIN"))
+            c.execute(text(f"GRANT ALL ON ALL TABLES IN SCHEMA public TO {role}"))
+            c.execute(
+                text(
+                    f"ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO {role}"
+                )
+            )
         c.execute(
             text(
                 "INSERT INTO companies(name,ats_type,resolved) VALUES ('Legacy','other',false)"
@@ -252,6 +263,22 @@ def test_postgres_schema_upgrade_when_available():
         )
     init_db(engine)
     init_db(engine)
+    with engine.connect() as c:
+        from shared.db import Base
+
+        for table in Base.metadata.tables:
+            assert c.scalar(
+                text(
+                    "SELECT relrowsecurity FROM pg_class WHERE oid=to_regclass(:table)"
+                ),
+                {"table": table},
+            )
+            for role in ("anon", "authenticated"):
+                for privilege in ("SELECT", "INSERT", "UPDATE", "DELETE"):
+                    assert not c.scalar(
+                        text("SELECT has_table_privilege(:role,:table,:privilege)"),
+                        {"role": role, "table": table, "privilege": privilege},
+                    )
     from shared.db import get_session_factory
 
     with get_session_factory(engine)() as db:

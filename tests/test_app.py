@@ -173,3 +173,50 @@ def test_alert_filters_and_delivery_history(client):
     page = c.get("/filters").text
     assert "Internship alerts" in page and "Backend watch" in page
     assert "pending" in page and "2 attempts" in page
+
+
+def test_large_feed_bounds_loaded_rows_and_keeps_all_pages(client):
+    from datetime import timedelta
+    from sqlalchemy import event
+    from shared.db import utcnow
+
+    c, m, Session = client
+    with Session() as db:
+        for profile in db.scalars(select(ResumeProfile)):
+            profile.locations = profile.term = profile.exclusions = ""
+            profile.remote_only = False
+        for i in range(125):
+            db.add(
+                Posting(
+                    company_name="Scale check",
+                    title=f"Python intern {i}",
+                    url=f"https://example.com/scale/{i}",
+                    source="greenhouse",
+                    first_seen_at=utcnow() + timedelta(minutes=i),
+                    raw_hash=f"scale-{i}",
+                    description="Python software",
+                    remote=True,
+                )
+            )
+        db.commit()
+    loaded = []
+
+    def track(posting, context):
+        loaded.append(posting.id)
+
+    event.listen(Posting, "load", track)
+    try:
+        page = c.get("/?sort=newest&page=2")
+        assert page.status_code == 200
+        assert len(loaded) == m.PAGE_SIZE
+        assert "Python intern 104" in page.text
+        loaded.clear()
+        page = c.get("/?sort=keywords")
+        assert len(loaded) <= m.RANKING_LIMIT
+        assert "Matching the latest 100 of 143 roles" in page.text
+        loaded.clear()
+        page = c.get("/?sort=newest&page=7")
+        assert "Page 7 of 8" in page.text
+        assert len(loaded) == m.PAGE_SIZE
+    finally:
+        event.remove(Posting, "load", track)

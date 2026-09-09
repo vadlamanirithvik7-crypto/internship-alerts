@@ -231,4 +231,17 @@ def init_db(engine=None):
 
         migrate(conn)
         Base.metadata.create_all(conn)
+        if engine.dialect.name == "postgresql":
+            # The app uses a trusted server connection, never the client Data API.
+            # Protect new tables in the same transaction as their creation.
+            roles = set(conn.scalars(text("SELECT rolname FROM pg_roles")))
+            quote = conn.dialect.identifier_preparer.quote
+            for table in Base.metadata.sorted_tables:
+                name = quote(table.name)
+                conn.execute(text(f"ALTER TABLE {name} ENABLE ROW LEVEL SECURITY"))
+                for role in ("anon", "authenticated"):
+                    if role in roles:
+                        conn.execute(
+                            text(f"REVOKE ALL ON TABLE {name} FROM {quote(role)}")
+                        )
     return engine

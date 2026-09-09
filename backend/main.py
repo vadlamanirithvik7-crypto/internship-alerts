@@ -143,6 +143,7 @@ engine = demo_engine if DEMO else init_db(get_engine())
 SessionFactory = get_session_factory(engine)
 
 PAGE_SIZE = 20
+RANKING_LIMIT = 100
 
 
 def get_db(request: Request):
@@ -229,7 +230,7 @@ def _feed_context(request: Request, db, page: int):
     params = request.query_params
     query = build_posting_query(params)
 
-    from shared.matching import rank, allowed
+    from shared.matching import rank
 
     profiles = list(db.scalars(select(ResumeProfile).order_by(ResumeProfile.id)))
     selected = params.get("profile", "")
@@ -237,19 +238,55 @@ def _feed_context(request: Request, db, page: int):
         (p for p in profiles if str(p.id) == selected),
         profiles[0] if profiles else None,
     )
-    all_rows = list(db.scalars(query))
+    if profile:
+        if profile.remote_only:
+            query = query.where(Posting.remote.is_(True))
+        locations = unpack_list(profile.locations)
+        if locations:
+            query = query.where(
+                or_(
+                    Posting.remote.is_(True),
+                    *[
+                        func.lower(func.coalesce(Posting.location, "")).contains(
+                            x, autoescape=True
+                        )
+                        for x in locations
+                    ],
+                )
+            )
+        if profile.term:
+            query = query.where(
+                func.lower(func.coalesce(Posting.term, "")).contains(
+                    profile.term.lower(), autoescape=True
+                )
+            )
+        for term in unpack_list(profile.exclusions):
+            content = func.lower(
+                Posting.title + "\n" + func.coalesce(Posting.description, "")
+            )
+            query = query.where(~content.contains(term, autoescape=True))
+    available = db.scalar(
+        select(func.count()).select_from(query.order_by(None).subquery())
+    )
     method = params.get("sort", "hybrid")
     if method not in {"hybrid", "weighted", "keywords", "newest"}:
         method = "hybrid"
     scores, ranking = {}, "chronological"
     if profile and method != "newest":
+        # Bound CPU work and database transfer on free hosting. Newest-first
+        # pagination still reaches every result, with the same profile filters.
+        all_rows = list(db.scalars(query.limit(RANKING_LIMIT)))
         all_rows, scores, ranking = rank(db, all_rows, profile, method)
+        total = len(all_rows)
     else:
-        all_rows = [p for p in all_rows if allowed(p, profile)]
-    total = len(all_rows)
+        total = available
     pages = max(1, (total + PAGE_SIZE - 1) // PAGE_SIZE)
     page = min(max(1, page), pages)
-    postings = all_rows[(page - 1) * PAGE_SIZE : page * PAGE_SIZE]
+    postings = (
+        all_rows[(page - 1) * PAGE_SIZE : page * PAGE_SIZE]
+        if profile and method != "newest"
+        else list(db.scalars(query.offset((page - 1) * PAGE_SIZE).limit(PAGE_SIZE)))
+    )
     sources = list(
         db.scalars(select(distinct(Posting.source)).order_by(Posting.source))
     )
@@ -257,6 +294,9 @@ def _feed_context(request: Request, db, page: int):
         "request": request,
         "postings": postings,
         "total": total,
+        "available": available,
+        "ranking_limited": available > total,
+        "newest_url": str(request.url.include_query_params(sort="newest", page=1)),
         "page": page,
         "pages": pages,
         "sources": sources,
