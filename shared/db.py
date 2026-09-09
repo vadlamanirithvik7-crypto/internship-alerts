@@ -109,6 +109,9 @@ class Posting(Base):
     notes = Column(Text, nullable=False, default="", server_default="")
     soft_key = Column(String(64), nullable=True, index=True)
     alert_eligible = Column(Boolean, nullable=False, default=True, server_default="1")
+    target_eligible = Column(Boolean, nullable=True, index=True)
+    applied_at = Column(DateTime, nullable=True)
+    status_updated_at = Column(DateTime, nullable=True)
 
     __table_args__ = (
         UniqueConstraint("raw_hash", name="uq_posting_raw_hash"),

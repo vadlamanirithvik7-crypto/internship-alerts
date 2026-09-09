@@ -69,6 +69,10 @@ document.querySelectorAll("[data-save]").forEach((button) => {
 });
 document.querySelectorAll("[data-status-form]").forEach((form) => {
   const id = form.dataset.statusForm;
+  form.querySelector("[data-mark-applied]")?.addEventListener("click", () => {
+    form.elements.status.value = "applied";
+    form.requestSubmit();
+  });
   if (demo && saved[id]) {
     form.elements.status.value = saved[id].status;
     form.elements.notes.value = saved[id].notes || "";

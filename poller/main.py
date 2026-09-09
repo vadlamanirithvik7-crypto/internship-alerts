@@ -8,6 +8,8 @@ without any single run dragging.
 """
 
 import argparse
+import hashlib
+import json
 import logging
 import os
 import sys
@@ -16,7 +18,8 @@ from datetime import datetime
 import time
 from types import SimpleNamespace
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, case, or_
+from datetime import timedelta
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -35,7 +38,16 @@ from poller.sources import (
 )
 from poller.store import upsert_companies, upsert_postings, reconcile_board
 from poller import health
-from shared.db import Company, PollRun, get_engine, get_session_factory, init_db, utcnow
+from shared.db import (
+    Company,
+    Posting,
+    AICache,
+    PollRun,
+    get_engine,
+    get_session_factory,
+    init_db,
+    utcnow,
+)
 
 log = logging.getLogger("poller")
 
@@ -65,7 +77,24 @@ def poll_boards(
                 Company.ats_type.in_(list(ats.FETCHERS)), Company.priority.is_(False)
             )
             .order_by(
-                Company.last_checked_at.is_(None).desc(), Company.last_checked_at.asc()
+                case(
+                    (
+                        Company.id.in_(
+                            select(Posting.company_id).where(
+                                Posting.target_eligible.is_(True),
+                                Posting.closed_at.is_(None),
+                            )
+                        )
+                        & or_(
+                            Company.last_checked_at.is_(None),
+                            Company.last_checked_at < utcnow() - timedelta(minutes=15),
+                        ),
+                        0,
+                    ),
+                    else_=1,
+                ),
+                Company.last_checked_at.is_(None).desc(),
+                Company.last_checked_at.asc(),
             )
             .limit(limit)
         )
@@ -208,12 +237,18 @@ def _run(
         session.commit()
         harvested_count = 0
         created = []
+        summary = {}
+
+        def deliver():
+            for key, count in process_new_postings(session, target_only=True).items():
+                summary[key] = summary.get(key, 0) + count
 
         # 1. Cross-company sources - trackers, HN, and Reddit list a direct apply
         #    URL regardless of which ATS a company uses, so this is how we cover
         #    the big employers (Google, Meta, ...) that aren't on the four ATS
         #    APIs we poll directly. All cheap, and dedupe collapses the overlap.
         feed_postings = []
+        feed_versions = {}
         for name, harvester in [
             ("simplify", simplify.fetch),
             ("trackers", trackers.fetch),
@@ -256,7 +291,16 @@ def _run(
             tick = time.monotonic()
             try:
                 rows = harvester() or []
-                feed_postings.extend(rows)
+                version = hashlib.sha256(
+                    json.dumps(rows, sort_keys=True, default=str).encode()
+                ).hexdigest()
+                cache_key = f"feed-version:{name}"
+                previous = session.get(AICache, cache_key)
+                unchanged = previous is not None and previous.payload == version
+                if not unchanged:
+                    feed_postings.extend(rows)
+                if not net.failed_requests():
+                    feed_versions[cache_key] = version
                 health.record(
                     session,
                     run_row.id,
@@ -265,7 +309,11 @@ def _run(
                     state="error" if not rows and net.failed_requests() else "ok",
                     detail=f"{net.failed_requests()} requests failed"
                     if net.failed_requests()
-                    else "",
+                    else (
+                        "Unchanged feed; no duplicate database transfer"
+                        if unchanged
+                        else ""
+                    ),
                     elapsed=time.monotonic() - tick,
                     notify=not skip_alerts,
                 )
@@ -301,21 +349,47 @@ def _run(
                 )
 
         # 3. Learn companies from everything seen so far, then store it.
-        upsert_companies(session, feed_postings)
+        from shared.eligibility import eligible
+
+        def relevant_company_rows(rows):
+            return [
+                p
+                for p in rows
+                if eligible(
+                    p.get("title"),
+                    p.get("location"),
+                    p.get("term"),
+                    p.get("description"),
+                )
+            ]
+
+        upsert_companies(session, relevant_company_rows(feed_postings))
         created.extend(
-            upsert_postings(session, feed_postings, alert_eligible=not skip_alerts)
+            upsert_postings(
+                session, feed_postings, alert_eligible=not skip_alerts, target_only=True
+            )
         )
+        # Commit versions with the postings, never before them: an interrupted
+        # ingest must retry the same feed on its next run.
+        for key, version in feed_versions.items():
+            session.merge(AICache(key=key, kind="feed-version", payload=version))
         session.commit()
         harvested_count += len(feed_postings)
+        if not skip_alerts:
+            deliver()
 
         # 4. Poll company boards, persisting each batch as it completes so a
         #    long sweep survives a crash or a runner timeout.
         def persist(batch):
             nonlocal harvested_count
             harvested_count += len(batch)
-            upsert_companies(session, batch)
-            new_rows = upsert_postings(session, batch, alert_eligible=not skip_alerts)
+            upsert_companies(session, relevant_company_rows(batch))
+            new_rows = upsert_postings(
+                session, batch, alert_eligible=not skip_alerts, target_only=True
+            )
             session.commit()
+            if new_rows and not skip_alerts:
+                deliver()
             return new_rows
 
         created.extend(
@@ -329,9 +403,8 @@ def _run(
         )
         session.commit()
 
-        summary = {}
         if not skip_alerts:
-            summary = process_new_postings(session)
+            deliver()
             session.commit()
 
         # 5. Expand coverage: discover new sector companies, resolve unresolved ones.

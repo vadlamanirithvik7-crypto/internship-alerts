@@ -16,6 +16,9 @@ ADDITIONS = {
         "notes": "TEXT NOT NULL DEFAULT ''",
         "soft_key": "VARCHAR(64)",
         "alert_eligible": "BOOLEAN NOT NULL DEFAULT TRUE",
+        "target_eligible": "BOOLEAN",
+        "applied_at": "TIMESTAMP",
+        "status_updated_at": "TIMESTAMP",
     },
 }
 
@@ -38,5 +41,36 @@ def migrate(conn):
             conn.execute(
                 text(
                     "CREATE INDEX IF NOT EXISTS ix_postings_soft_key ON postings (soft_key)"
+                )
+            )
+            from shared.eligibility import eligible
+
+            while True:
+                rows = (
+                    conn.execute(
+                        text(
+                            "SELECT id,title,location,term,description FROM postings WHERE target_eligible IS NULL LIMIT 500"
+                        )
+                    )
+                    .mappings()
+                    .all()
+                )
+                if not rows:
+                    break
+                conn.execute(
+                    text("UPDATE postings SET target_eligible=:value WHERE id=:id"),
+                    [
+                        {
+                            "id": r["id"],
+                            "value": eligible(
+                                r["title"], r["location"], r["term"], r["description"]
+                            ),
+                        }
+                        for r in rows
+                    ],
+                )
+            conn.execute(
+                text(
+                    "CREATE INDEX IF NOT EXISTS ix_postings_target_eligible ON postings (target_eligible)"
                 )
             )

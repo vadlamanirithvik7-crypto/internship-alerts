@@ -3,7 +3,8 @@
 import logging
 import re
 from html import unescape
-from sqlalchemy import func, select
+from sqlalchemy import func, select, or_
+from sqlalchemy.orm import load_only
 from poller.normalize import canonical_url, detect_ats, is_us_location, workday_parts
 from shared.db import Company, Posting, pack_list, raw_hash, utcnow
 from shared.sectors import is_internship, tag_posting
@@ -81,7 +82,13 @@ def upsert_companies(session, postings):
 
 
 def upsert_postings(
-    session, postings, *, internships_only=True, us_only=True, alert_eligible=True
+    session,
+    postings,
+    *,
+    internships_only=True,
+    us_only=True,
+    alert_eligible=True,
+    target_only=False,
 ):
     candidates = {}
     for posting in postings:
@@ -113,12 +120,30 @@ def upsert_postings(
     now = utcnow()
     for offset in range(0, len(items), 400):
         chunk = items[offset : offset + 400]
-        existing = {
-            p.raw_hash: p
-            for p in session.scalars(
-                select(Posting).where(Posting.raw_hash.in_([k for k, _ in chunk]))
+        from shared.eligibility import eligible
+
+        existing_query = select(Posting).where(
+            Posting.raw_hash.in_([k for k, _ in chunk])
+        )
+        if target_only:
+            eligible_keys = [
+                key
+                for key, p in chunk
+                if eligible(
+                    p.get("title"),
+                    p.get("location"),
+                    p.get("term"),
+                    p.get("description"),
+                )
+                or p.get("active") is False
+            ]
+            existing_query = existing_query.where(
+                or_(
+                    Posting.target_eligible.is_(True),
+                    Posting.raw_hash.in_(eligible_keys),
+                )
             )
-        }
+        existing = {p.raw_hash: p for p in session.scalars(existing_query)}
         names = {p.get("company_name", "").lower()[:300] for _, p in chunk}
         companies = {
             name.lower(): id
@@ -134,6 +159,19 @@ def upsert_postings(
                 # Direct-board observations take precedence over stale aggregators.
                 if row and row.source not in DIRECT:
                     row.closed_at = row.closed_at or now
+                continue
+            from shared.eligibility import eligible
+
+            if (
+                target_only
+                and not (row and row.target_eligible)
+                and not eligible(
+                    posting.get("title"),
+                    posting.get("location"),
+                    posting.get("term"),
+                    posting.get("description"),
+                )
+            ):
                 continue
             if row is None:
                 row = Posting(
@@ -185,6 +223,11 @@ def upsert_postings(
                     "location": row.location,
                 }
             )
+            from shared.eligibility import eligible
+
+            row.target_eligible = eligible(
+                row.title, row.location, row.term, row.description
+            )
         session.flush()
     return created
 
@@ -195,8 +238,12 @@ def reconcile_board(session, company, postings, *, complete):
         return
     seen = {_identity(p) for p in postings}
     for row in session.scalars(
-        select(Posting).where(
-            Posting.company_id == company.id, Posting.source == company.ats_type
+        select(Posting)
+        .where(Posting.company_id == company.id, Posting.source == company.ats_type)
+        .options(
+            load_only(
+                Posting.id, Posting.raw_hash, Posting.missing_sweeps, Posting.closed_at
+            )
         )
     ):
         if row.raw_hash in seen:

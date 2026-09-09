@@ -4,6 +4,7 @@ import logging
 from datetime import timedelta
 from urllib.parse import urlparse
 from sqlalchemy import exists, select
+from sqlalchemy.orm import defer
 from poller.alerts import send_email, send_ntfy_deliveries
 from shared.db import AlertSent, Delivery, Filter, Posting, unpack_list, utcnow
 
@@ -43,7 +44,7 @@ def _wrapper(p):
     }
 
 
-def process_new_postings(session, postings=None, *, lookback_days=3):
+def process_new_postings(session, postings=None, *, lookback_days=3, target_only=False):
     """Compatibility name; candidates now come from DB even with no new inserts.
 
     Failed deliveries remain pending beyond the discovery lookback. Single poller
@@ -53,21 +54,29 @@ def process_new_postings(session, postings=None, *, lookback_days=3):
     filters = list(session.scalars(select(Filter).where(Filter.active.is_(True))))
     for f in filters:
         for channel in set(unpack_list(f.channels) or ["email"]) & {"email", "ntfy"}:
-            query = select(Posting).where(
-                Posting.first_seen_at >= utcnow() - timedelta(days=lookback_days),
-                Posting.closed_at.is_(None),
-                Posting.alert_eligible.is_(True),
-                ~exists().where(
-                    AlertSent.posting_id == Posting.id,
-                    AlertSent.filter_id == f.id,
-                    AlertSent.channel == channel,
-                ),
-                ~exists().where(
-                    Delivery.posting_id == Posting.id,
-                    Delivery.filter_id == f.id,
-                    Delivery.channel == channel,
-                ),
+            query = (
+                select(Posting)
+                .options(defer(Posting.description))
+                .where(
+                    Posting.first_seen_at >= utcnow() - timedelta(days=lookback_days),
+                    Posting.closed_at.is_(None),
+                    Posting.alert_eligible.is_(True),
+                    Posting.applied_at.is_(None),
+                    Posting.status.in_(["new", "interested"]),
+                    ~exists().where(
+                        AlertSent.posting_id == Posting.id,
+                        AlertSent.filter_id == f.id,
+                        AlertSent.channel == channel,
+                    ),
+                    ~exists().where(
+                        Delivery.posting_id == Posting.id,
+                        Delivery.filter_id == f.id,
+                        Delivery.channel == channel,
+                    ),
+                )
             )
+            if target_only:
+                query = query.where(Posting.target_eligible.is_(True))
             for p in session.scalars(query):
                 if posting_matches(p, f):
                     session.add(
@@ -77,6 +86,7 @@ def process_new_postings(session, postings=None, *, lookback_days=3):
     work = list(
         session.execute(
             select(Delivery, Posting, Filter)
+            .options(defer(Posting.description))
             .join(Posting, Delivery.posting_id == Posting.id)
             .join(Filter, Delivery.filter_id == Filter.id)
             .where(Delivery.state == "pending", Filter.active.is_(True))
@@ -89,6 +99,9 @@ def process_new_postings(session, postings=None, *, lookback_days=3):
     for d, p, f in sorted(work, key=lambda row: _wrapper(row[1])):
         if (
             p.closed_at
+            or p.applied_at is not None
+            or p.status not in ("new", "interested")
+            or (target_only and not p.target_eligible)
             or not posting_matches(p, f)
             or d.channel not in (unpack_list(f.channels) or ["email"])
         ):

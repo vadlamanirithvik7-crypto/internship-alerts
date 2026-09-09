@@ -144,6 +144,7 @@ SessionFactory = get_session_factory(engine)
 
 PAGE_SIZE = 20
 RANKING_LIMIT = 100
+TARGET_ONLY = True
 
 
 def get_db(request: Request):
@@ -229,6 +230,12 @@ def build_posting_query(params):
 def _feed_context(request: Request, db, page: int):
     params = request.query_params
     query = build_posting_query(params)
+    if TARGET_ONLY and not request.state.demo:
+        query = query.where(Posting.target_eligible.is_(True))
+        if not params.get("status"):
+            query = query.where(
+                Posting.applied_at.is_(None), Posting.status.in_(["new", "interested"])
+            )
 
     from shared.matching import rank
 
@@ -491,10 +498,34 @@ def update_status(
     if not p:
         raise HTTPException(404)
     p.status = status
+    p.status_updated_at = utcnow()
+    if status == "applied" and p.applied_at is None:
+        p.applied_at = p.status_updated_at
     if notes is not None:
         p.notes = notes
+    from shared.application_sheet import update_workbook
+
+    db.flush()
+    update_workbook(db)
     db.commit()
     return RedirectResponse(f"/jobs/{posting_id}", 303)
+
+
+@app.get("/applications.xlsx")
+def application_spreadsheet(request: Request, db=Depends(get_db)):
+    if request.state.demo:
+        raise HTTPException(
+            403, "The application workbook belongs to the private workspace."
+        )
+    from shared.application_sheet import workbook_bytes
+
+    return Response(
+        workbook_bytes(db),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={
+            "Content-Disposition": 'attachment; filename="internship-applications.xlsx"'
+        },
+    )
 
 
 @app.get("/applications")

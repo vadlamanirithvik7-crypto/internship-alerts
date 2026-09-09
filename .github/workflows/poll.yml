@@ -2,9 +2,9 @@ name: Poll for new internships
 
 on:
   schedule:
-    # Every 30 minutes. GitHub may delay scheduled runs under load, which is fine -
+    # Every 5 minutes. GitHub may delay scheduled runs under load, which is fine -
     # receipts dedupe completed sends; the outbox retries unsuccessful deliveries.
-    - cron: "*/30 * * * *"
+    - cron: "*/5 * * * *"
   workflow_dispatch:
     inputs:
       discovery:
@@ -13,7 +13,7 @@ on:
         default: false
       board_slice:
         description: "How many company boards to poll this run"
-        default: "250"
+        default: "100"
 
 concurrency:
   # Never let a slow run overlap the next scheduled one and double-poll.
@@ -60,7 +60,7 @@ jobs:
           REDDIT_CLIENT_SECRET: ${{ secrets.REDDIT_CLIENT_SECRET }}
         run: |
           python3 poller/main.py \
-            --board-slice "${{ github.event.inputs.board_slice || '250' }}" \
+            --board-slice "${{ github.event.inputs.board_slice || '100' }}" \
             ${{ github.event.inputs.discovery == 'true' && '--discovery' || '' }} \
             --verbose
 
@@ -75,7 +75,7 @@ jobs:
       - name: Check if weekly slot
         id: slot
         run: |
-          if [ "$(date -u +%u)" = "7" ] && [ "$(date -u +%H)" = "03" ] && [ "$(date -u +%M)" -lt 30 ]; then
+          if [ "$(date -u +%u)" = "7" ] && [ "$(date -u +%H)" = "03" ] && [ "$(date -u +%M)" -lt 5 ]; then
             echo "run=true" >> "$GITHUB_OUTPUT"
           else
             echo "run=false" >> "$GITHUB_OUTPUT"

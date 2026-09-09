@@ -16,6 +16,7 @@ def client(monkeypatch):
     monkeypatch.delenv("ADMIN_PASSWORD", raising=False)
     module = importlib.import_module("backend.main")
     monkeypatch.setattr(module, "DEMO", False)
+    monkeypatch.setattr(module, "TARGET_ONLY", False)
     engine = create_engine(
         "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
     )
@@ -220,3 +221,46 @@ def test_large_feed_bounds_loaded_rows_and_keeps_all_pages(client):
         assert len(loaded) == m.PAGE_SIZE
     finally:
         event.remove(Posting, "load", track)
+
+
+def test_applied_action_updates_persistent_workbook(client):
+    from io import BytesIO
+    from openpyxl import load_workbook
+    from shared.db import AICache
+
+    c, _, Session = client
+    assert (
+        c.post(
+            "/jobs/1/status",
+            data={"status": "applied", "notes": '=HYPERLINK("https://evil.example")'},
+        ).status_code
+        == 200
+    )
+    with Session() as db:
+        first = db.get(Posting, 1).applied_at
+        assert first is not None
+        assert db.get(AICache, "application-workbook-v1") is not None
+    c.post("/jobs/1/status", data={"status": "applied"})
+    c.post("/jobs/1/status", data={"status": "interview"})
+    with Session() as db:
+        assert db.get(Posting, 1).applied_at == first
+    response = c.get("/applications.xlsx")
+    sheet = load_workbook(BytesIO(response.content)).active
+    rows = list(sheet.values)
+    assert len([row for row in rows[1:] if row[0] == 1]) == 1
+    assert rows[1][0] == 1 and rows[1][5] == "interview"
+    assert sheet["J2"].data_type == "s"
+    assert c.get("/demo/applications.xlsx").status_code == 403
+
+
+def test_live_feed_requires_target_eligibility(client, monkeypatch):
+    c, m, Session = client
+    monkeypatch.setattr(m, "TARGET_ONLY", True)
+    with Session() as db:
+        for p in db.scalars(select(Posting)):
+            p.target_eligible = False
+        db.get(Posting, 1).target_eligible = True
+        db.commit()
+    page = c.get("/?sort=newest").text
+    assert "Backend Engineering Intern" in page
+    assert "RTL Design Intern" not in page
