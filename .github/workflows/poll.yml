@@ -44,6 +44,8 @@ jobs:
       - name: Poll sources and send alerts
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          GOOGLE_SHEETS_WEBHOOK_URL: ${{ secrets.GOOGLE_SHEETS_WEBHOOK_URL }}
+          GOOGLE_SHEETS_SYNC_TOKEN: ${{ secrets.GOOGLE_SHEETS_SYNC_TOKEN }}
           ALERT_EMAIL_FROM: ${{ secrets.ALERT_EMAIL_FROM }}
           ALERT_EMAIL_TO: ${{ secrets.ALERT_EMAIL_TO }}
           GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}

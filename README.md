@@ -58,6 +58,10 @@ Without `ADMIN_PASSWORD`, live-data pages accept only localhost requests. With a
 
 Profiles support preferences, location restrictions, term, exclusions, and remote-only filtering. Applications support interested, applied, interview, offer, and rejected stages, plus notes. Job closure is separate from application status. Priority companies are polled in addition to the rotating board slice.
 
+On a role's page, **Mark applied** records the first application time and marks it **Applied — done**. Completed applications leave the default discovery feed and stop producing new alerts. The Applications page retains their stages and notes. Each progress update writes an Excel workbook and a Google Sheets sync record to PostgreSQL in the same transaction. The free [Google Sheets bridge](docs/google-sheets.md) updates the owner's private Sheet in the background, with durable retries and protection against duplicate or out-of-order updates. Its pending count is visible in Applications. **Download application spreadsheet** exports a separate persistent Excel backup with company, role, location, term, stage, dates, URL, and notes. The public demo cannot sync or export private applications.
+
+The live feed and alert worker require explicit evidence of a **United States work location**, an **internship or co-op**, and **summer 2027**. Unknown remote regions, unsupported seasons, and graduation-year-only references are excluded. This conservative scope may omit a relevant role until its source supplies enough evidence. Existing historical rows remain stored separately from the targeted discovery feed.
+
 ## AI matching and evidence
 
 `shared/matching.py` chunks retained descriptions and resumes, runs `sentence-transformers/all-MiniLM-L6-v2` through FastEmbed/ONNX on CPU, and combines semantic similarity, exact tokens, and freshness. Model/text/version hashes cache vectors in the database. Profile constraints apply before ranking. `C++`, `C#`, `.NET`, and other exact terms are preserved. Keyword and weighted baselines are selectable; unavailable inference falls back visibly to keywords. The first model download and uncached large corpora are slower than cached requests.
@@ -81,13 +85,15 @@ Supported boards: Greenhouse, Lever, Ashby, Workday, SmartRecruiters, Workable, 
 
 Companies grow through observed ATS URLs, SEC EDGAR sector discovery, and live board probes. SEC requires a real `SEC_CONTACT_EMAIL` in the User-Agent; set it in secrets, not source code. A watchlist company is not necessarily resolved or polled directly.
 
-`python poller/main.py --board-slice 250 --resolve-slice 40 --verbose` runs ingestion and alerts. `--discovery` adds SEC discovery. `--skip-search` skips broad keyword sources. HN, Reddit, Microsoft, and Amazon are fetched at most once per six hours. `--board-slice 0` disables all board polling, including priority companies.
+`python poller/main.py --board-slice 100 --resolve-slice 40 --verbose` runs ingestion and alerts. The workflow requests a run every five minutes, but GitHub can delay or queue it. The worker checks current Summer2027 trackers, polls manually prioritized boards each run, gives relevant boards another check after 15 minutes, and rotates through the remaining watchlist. Feed fingerprints skip unchanged ingestion. Alerts are delivered after feed ingestion and after board batches with new roles, before the full sweep ends. This reduces discovery delay without promising instant or exhaustive coverage.
+
+`--discovery` adds SEC discovery. `--skip-search` skips broad keyword sources. HN, Reddit, Microsoft, and Amazon are fetched at most once per six hours. `--board-slice 0` disables all board polling, including priority companies.
 
 ### Reliability semantics
 
 - **Retries:** new candidates are discovered from a bounded recent window in the database, then persisted in a durable outbox. Failed deliveries remain pending beyond that window. New filters can match yesterday's postings.
 - **Delivery:** successful receipts are unique per posting/filter/channel. SMTP and ntfy do not provide a transaction shared with the database; a crash after delivery but before recording a receipt can repeat a message. This is at-least-once delivery, not guaranteed exactly-once delivery.
-- **Push batches:** only acknowledged posting IDs are recorded. Failed or oversized digests and remaining burst rows stay pending. Email is consolidated into one digest per run, grouped by filter.
+- **Push batches:** only acknowledged posting IDs are recorded. Failed or oversized digests and remaining burst rows stay pending. Each delivery pass consolidates email into a digest grouped by filter; one poll can send more than one digest as additional boards finish.
 - **Deduplication:** canonical URL identity merges shared URLs. Exact company/title/location soft keys suppress a Jobright-wrapper/direct-link duplicate notification; they never merge records or suppress two different direct requisitions. Different wrapper titles/locations can still evade this conservative heuristic.
 - **Tagging:** descriptions are retained (up to 30,000 characters), and insert/retag use the same stored input. Legacy NULL descriptions preserve existing tags until text is harvested again.
 - **Availability:** every sighting updates `last_seen_at`. Explicit tracker inactivity closes tracker-origin rows. Three complete successful direct-board scans missing a posting close direct-origin rows; failed, truncated, or skipped scans never count. Direct-board evidence takes precedence over aggregator inactivity. A fresh direct sighting reopens a role.

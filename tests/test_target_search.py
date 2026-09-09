@@ -11,6 +11,8 @@ from shared.eligibility import eligible, confirmed_us
         "Remote (USA)",
         "New York, NY; Toronto, Canada",
         "Paris, TX",
+        "Atlanta, GA",
+        "Atlanta, Georgia, USA",
     ],
 )
 def test_confirmed_us_options(location):
@@ -28,6 +30,7 @@ def test_confirmed_us_options(location):
         "Toronto, Canada",
         "London, UK",
         "Georgia",
+        "Tbilisi, Georgia",
         "Remote - Europe",
     ],
 )

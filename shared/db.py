@@ -167,6 +167,18 @@ class Delivery(Base):
     __table_args__ = (UniqueConstraint("posting_id", "filter_id", "channel"),)
 
 
+class ApplicationSync(Base):
+    """One durable, replaceable Google Sheets update per application."""
+
+    __tablename__ = "application_sync"
+    posting_id = Column(Integer, ForeignKey("postings.id"), primary_key=True)
+    version = Column(String(40), nullable=False)
+    payload = Column(Text, nullable=False)
+    state = Column(String(20), nullable=False, default="pending", index=True)
+    attempts = Column(Integer, nullable=False, default=0)
+    synced_at = Column(DateTime)
+
+
 class PollRun(Base):
     __tablename__ = "poll_runs"
     id = Column(Integer, primary_key=True)

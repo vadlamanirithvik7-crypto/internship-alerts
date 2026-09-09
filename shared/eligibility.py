@@ -26,10 +26,11 @@ def confirmed_us(location):
         if any(
             re.search(r"\b" + re.escape(name) + r"\b", part, re.I)
             for name in US_STATE_NAMES
+            if name.lower() != "georgia"
         ):
-            # Georgia is also a country; without a US marker/state code it is ambiguous.
-            if not re.fullmatch(r"\s*(?:remote[, -]*)?georgia\s*", part, re.I):
-                return True
+            return True
+        # Georgia is also a country, including city-qualified locations such as
+        # Tbilisi, Georgia. Require the US marker or GA code checked above.
     return False
 
 

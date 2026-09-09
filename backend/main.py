@@ -20,6 +20,7 @@ from fastapi import (
     Query,
     UploadFile,
     File,
+    BackgroundTasks,
 )
 from fastapi.responses import RedirectResponse, JSONResponse, Response, FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -486,6 +487,7 @@ def job_detail(request: Request, posting_id: int, profile: int = 0, db=Depends(g
 @app.post("/jobs/{posting_id}/status")
 def update_status(
     posting_id: int,
+    background_tasks: BackgroundTasks,
     status: str = Form(...),
     notes: str | None = Form(None),
     db=Depends(get_db),
@@ -504,10 +506,13 @@ def update_status(
     if notes is not None:
         p.notes = notes
     from shared.application_sheet import update_workbook
+    from shared.google_sheet import enqueue, sync_pending
 
     db.flush()
     update_workbook(db)
+    enqueue(db, p)
     db.commit()
+    background_tasks.add_task(sync_pending, db.get_bind())
     return RedirectResponse(f"/jobs/{posting_id}", 303)
 
 
@@ -529,7 +534,7 @@ def application_spreadsheet(request: Request, db=Depends(get_db)):
 
 
 @app.get("/applications")
-def applications(request: Request, db=Depends(get_db)):
+def applications(request: Request, background_tasks: BackgroundTasks, db=Depends(get_db)):
     rows = list(
         db.scalars(
             select(Posting)
@@ -539,7 +544,19 @@ def applications(request: Request, db=Depends(get_db)):
     )
     if request.state.demo:
         rows = list(db.scalars(select(Posting).order_by(Posting.first_seen_at.desc())))
-    return templates.TemplateResponse(request, "applications.html", {"postings": rows})
+    sheet_status = None
+    if not request.state.demo:
+        from shared.google_sheet import enqueue, status, sync_pending
+        from shared.db import ApplicationSync
+        # Include applications saved before the Google connection was installed.
+        for p in rows:
+            if db.get(ApplicationSync, p.id) is None:
+                enqueue(db, p)
+        db.commit()
+        sheet_status = status(db)
+        if sheet_status["pending"]:
+            background_tasks.add_task(sync_pending, db.get_bind())
+    return templates.TemplateResponse(request, "applications.html", {"postings": rows, "sheet_sync": sheet_status})
 
 
 @app.post("/companies/{company_id}/priority")

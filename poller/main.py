@@ -225,6 +225,9 @@ def _run(
     engine = init_db(get_engine())
     Session = get_session_factory(engine)
     started = utcnow()
+    if not skip_alerts:
+        from shared.google_sheet import sync_pending
+        sync_pending(engine)
 
     with Session() as session:
         # The lock proves previous "running" rows no longer have an active runner.
