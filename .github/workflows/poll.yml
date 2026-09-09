@@ -63,6 +63,7 @@ jobs:
         run: |
           python3 poller/main.py \
             --board-slice "${{ github.event.inputs.board_slice || '100' }}" \
+            --resolve-slice 0 \
             ${{ github.event.inputs.discovery == 'true' && '--discovery' || '' }} \
             --verbose
 
