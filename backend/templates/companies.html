@@ -15,14 +15,14 @@
   {% endfor %}
 </div>
 
-<form method="get" action="/companies" class="search-bar">
+<form method="get" action="{{base_path}}/companies" class="search-bar">
   <input type="text" name="q" value="{{ q }}" placeholder="Search companies">
   <button type="submit">Search</button>
 </form>
 
 <table class="table">
   <thead>
-    <tr><th>Company</th><th>ATS</th><th>Board</th><th>Last checked</th></tr>
+    <tr><th>Company</th><th>ATS</th><th>Board</th><th>Last checked</th><th>Priority</th></tr>
   </thead>
   <tbody>
     {% for c in companies %}
@@ -30,7 +30,7 @@
       <td>{{ c.name }}</td>
       <td><span class="pill {% if c.resolved %}pill-active{% endif %}">{{ c.ats_type }}</span></td>
       <td class="muted">{{ c.slug or c.workday_tenant or '-' }}</td>
-      <td class="muted">{{ c.last_checked_at.strftime('%b %d %H:%M') if c.last_checked_at else 'never' }}</td>
+      <td class="muted">{{ c.last_checked_at.strftime('%b %d %H:%M') if c.last_checked_at else 'never' }}</td><td><form method="post" action="{{base_path}}/companies/{{c.id}}/priority"><button aria-label="Toggle priority for {{c.name}}">{{'★' if c.priority else '☆'}}</button></form></td>
     </tr>
     {% endfor %}
   </tbody>
@@ -38,9 +38,9 @@
 
 {% if pages > 1 %}
 <div class="pager">
-  {% if page > 1 %}<a href="/companies?q={{ q }}&page={{ page - 1 }}">&larr; Previous</a>{% endif %}
+  {% if page > 1 %}<a href="{{base_path}}/companies?q={{ q }}&page={{ page - 1 }}">&larr; Previous</a>{% endif %}
   <span class="muted">page {{ page }} of {{ pages }}</span>
-  {% if page < pages %}<a href="/companies?q={{ q }}&page={{ page + 1 }}">Next &rarr;</a>{% endif %}
+  {% if page < pages %}<a href="{{base_path}}/companies?q={{ q }}&page={{ page + 1 }}">Next &rarr;</a>{% endif %}
 </div>
 {% endif %}
 {% endblock %}

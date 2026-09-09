@@ -17,6 +17,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from shared.db import (  # noqa: E402
     Posting,
+    init_db,
     get_engine,
     get_session_factory,
     pack_list,
@@ -26,7 +27,7 @@ from shared.sectors import tag_posting  # noqa: E402
 
 
 def retag(dry_run=False, show=12):
-    Session = get_session_factory(get_engine())
+    Session = get_session_factory(init_db(get_engine()))
     added_total, removed_total, changed = 0, 0, 0
 
     with Session() as session:
@@ -34,8 +35,14 @@ def retag(dry_run=False, show=12):
         examples = []
 
         for posting in postings:
+            if posting.description is None:
+                continue  # preserve legacy tags until the original text is re-harvested
             old = set(unpack_list(posting.sector_tags))
-            new = set(tag_posting(posting.title, "", posting.category_hint or ""))
+            new = set(
+                tag_posting(
+                    posting.title, posting.description, posting.category_hint or ""
+                )
+            )
             if old == new:
                 continue
 
@@ -50,8 +57,11 @@ def retag(dry_run=False, show=12):
         if not dry_run:
             session.commit()
 
-        print(f"{len(postings)} postings scanned, {changed} would change" if dry_run
-              else f"{len(postings)} postings scanned, {changed} updated")
+        print(
+            f"{len(postings)} postings scanned, {changed} would change"
+            if dry_run
+            else f"{len(postings)} postings scanned, {changed} updated"
+        )
         print(f"  tags added: {added_total}, tags removed: {removed_total}")
         if examples:
             print("\nexamples:")
@@ -63,7 +73,11 @@ def retag(dry_run=False, show=12):
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Re-apply sector tags to stored postings")
-    parser.add_argument("--dry-run", action="store_true", help="preview without writing")
+    parser = argparse.ArgumentParser(
+        description="Re-apply sector tags to stored postings"
+    )
+    parser.add_argument(
+        "--dry-run", action="store_true", help="preview without writing"
+    )
     args = parser.parse_args()
     retag(dry_run=args.dry_run)

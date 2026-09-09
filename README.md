@@ -1,209 +1,127 @@
-# Internship Alert System
+# Internship Radar
 
-Watches a large set of company job boards and job feeds for new **internship and
-co-op** postings, tags them by sector, and alerts you when something matches your
-saved filters. Everything runs on free APIs — no paid services, no LLM/API credits.
+A phone-friendly internship discovery app with resume-aware semantic matching, evidence-backed comparisons, saved applications, and an observable alert pipeline. Built with Python, FastAPI, Jinja, SQLAlchemy, PostgreSQL/SQLite, and locally executed ONNX embeddings.
 
-Sectors tracked: Software/Tech, Semiconductor, ASIC Design, Computer Architecture,
-Power Electronics, Robotics, and a general Hardware bucket.
+**Budget: $0.** No paid inference API, required API credits, paid database, or paid hosting plan. Optional services must remain within their free allowances. The public demo is separate from private data and notification credentials.
 
----
+## Hosted app
 
-## How it works
+- Private workspace: https://internship-alerts-1412.onrender.com/
+- Public recruiter demo: https://internship-alerts-1412.onrender.com/demo/
 
-```
-GitHub Actions (every 30 min)          Render (free web service)
-  poller/main.py                          backend/  FastAPI + HTMX
-   ├─ harvest sources                       ├─ browse & filter postings
-   ├─ tag sectors (keyword rules)           ├─ manage alert filters
-   ├─ dedupe + store                        └─ inspect company watchlist
-   └─ match filters → alert
-              │                                     │
-              └──────────► Supabase Postgres ◄──────┘
-                                  │
-                     Email (Gmail SMTP) + ntfy.sh push
-```
+The live workspace runs on Render Free with Supabase PostgreSQL and password protection. The laptop is not needed. The public demo uses isolated fictional data. Free-instance cold starts may take 50 seconds or more.
 
-### Where postings come from
+**Live Google Sheets sync verified September 8, 2026.** Marking Applied from the hosted app writes the application to the owner's private Sheet. Repeated updates preserve the original application date and update one existing row; the Excel backup stays available in Applications. Change stages and notes in the app: synchronization is one-way from the app to Sheets.
 
-Several layers, so coverage isn't capped by any single list. Everything is deduped
-on the canonical URL, so overlapping sources are free — whoever lists a job first is
-what triggers the alert, and duplicates collapse into one row.
+The live feed and alerts target explicitly confirmed US summer 2027 internships and co-ops. GitHub Actions requests polling every five minutes after this workflow is on the default branch; queued runs and source update delays can increase that interval. Email and ntfy transport acknowledgements have been recorded for real matching roles. Those acknowledgements do not establish that a person read the notification.
 
-1. **Cross-company trackers** — bot-updated community lists that publish a direct
-   application link for a job *no matter which ATS the company uses*. This is how the
-   big employers that aren't on the four ATS APIs below (Google, Meta, Apple, …) get
-   caught at all. Two shapes are ingested: `listings.json` feeds
-   (`SimplifyJobs/*`, `vanshb03/*`) and markdown-table READMEs (`jobright-ai/*`). New
-   tracker repos are **auto-discovered every run** via the GitHub search API and
-   classified into one of those two shapes, so a tracker that appears mid-season is
-   picked up with no code change.
-2. **Hacker News "Who is hiring"** — the monthly thread, mined for intern/co-op roles.
-   Strong for startups that never reach a tracker repo.
-3. **Reddit megathreads** — r/csMajors and r/internships, mined via the Reddit API.
-   Broadest and noisiest; needs credentials (see setup) and skips itself without them.
-4. **Direct company boards** — Greenhouse, Lever, Ashby and Workday public JSON
-   APIs, polled per company. Usually the fastest path from "posted" to "alerted".
-5. **Broad keyword search** — Adzuna, USAJOBS, Arbeitnow, RemoteOK. Not bounded by
-   the watchlist, so it catches small/private companies the other layers miss.
+Render service: `srv-dag8mauk1f9s7388sar0`. Credentials belong in the service's Environment screen and Actions secrets; never put them in this document, chat, or source control. See [rollout verification](docs/rollout-verification.md) and [Google Sheets setup](docs/google-sheets.md).
 
-Only US-based roles are kept: a posting is dropped when every location it names is
-outside the US (a role listing both a US and a foreign office is kept).
-
-### How the company watchlist grows (no hand-maintained list)
-
-- Every posting URL is parsed to detect its ATS and **learn a real board slug**
-  (`boards.greenhouse.io/x`, `x.wd1.myworkdayjobs.com`, …). Seeing a company once
-  is enough to start polling it directly forever after.
-- **SEC EDGAR SIC industry browse** discovers companies by sector (e.g. SIC 3674 =
-  semiconductors) — free, keyless, hundreds of real companies per sector.
-  (ETF holdings were the original plan, but iShares/VanEck serve bot-block pages to
-  non-browser clients and only expose ~30 top holdings anyway.)
-- `poller/resolver.py` probes candidate slugs against the **live** ATS APIs and only
-  keeps a slug the API actually confirms. Nothing guessed is ever stored as fact.
-  Unresolved companies stay in the list and are still matched by name via keyword search.
-
-The first run seeds ~1,200 companies; the weekly discovery job grows it from there.
-
----
-
-## Setup
-
-### 1. Local install
+## Run the expo demo
 
 ```bash
-pip install -r requirements.txt
-cp .env.example .env      # then fill in the values below
+python3.12 -m venv .venv
+.venv/bin/pip install -r requirements-ai.txt
+.venv/bin/python scripts/demo.py --warm
+DEMO_MODE=1 .venv/bin/uvicorn backend.main:app --host 0.0.0.0 --port 8000
 ```
 
-Runs on SQLite locally with zero config. Try it:
+Open `http://localhost:8000`. On a phone on the same Wi-Fi, use your computer's LAN IP and port 8000. For access away from the computer, deploy the single **free** service in `render.yaml` and share its `/demo/` URL. `render-demo.yaml` remains an alternative for demo-only hosting; do not deploy both if you want to reserve free instance hours. Render's free service can sleep, so open the URL before your conversation. The demo service worker saves the three profiles and job pages for offline use after its first successful load. Wait for “Demo saved for offline use.” Arbitrary searches not previously cached show an offline page with links to the saved demo. HTTPS is required for service workers outside localhost.
+
+The fictional dataset includes 18 roles and three sample profiles. Scores are produced by the actual embedding model. Job/company/source observations are clearly labeled as sample data. Saves, stages, and notes persist only in the visitor's browser; the public demo cannot modify production data. Do not present fictional employers or the synthetic evaluation as real usage.
+
+Phone walkthrough (about one minute):
+1. Start with **Software engineering**, open the top role, and point out the resume/job excerpts.
+2. Switch to **Embedded systems** to demonstrate personalized ranking.
+3. Save a role, change its application stage, and open **Saved**.
+4. Open **Alerts** or **Behind the build** to discuss retries, deduplication, and deployment.
+
+## Fully online, $0 deployment
+
+Use **one** Render Free web service (`render.yaml`), the existing external Supabase Free PostgreSQL database, and the existing GitHub Actions scheduled worker in this public repository. No paid instance, Render database, disk, custom domain, or inference subscription is needed. Confirm both hosting/database accounts remain on Free and do not enable automatic paid upgrades.
+
+1. Deploy the tested branch/merged main with `render.yaml`. Set `DATABASE_URL` to the **same** database used by the GitHub Actions secret. Set a strong `ADMIN_PASSWORD` in Render; never put credentials in a URL or the repository.
+2. `/` is the protected working app: real roles, resume uploads, cloud-saved applications, company priorities, alert filters, and delivery history. `/demo/` is the public recruiter walkthrough using isolated fictional data. It cannot read the live database or change alert settings.
+3. The build downloads the free local embedding model and warms the demo. Live resume/job vectors are cached in PostgreSQL. Alert credentials belong only in Actions, not in the public demo.
+4. Merge the tested workflow onto the default branch to activate the new scheduled poller. Existing `DATABASE_URL`, `ALERT_EMAIL_FROM`, `ALERT_EMAIL_TO`, `GMAIL_APP_PASSWORD`, and `NTFY_TOPIC` secrets supply storage and notification delivery. Optional `NTFY_TOKEN` and `NTFY_BASE` support an authenticated/custom ntfy service.
+5. Open the protected `/filters` page, choose sectors/keywords/locations and channels, and create an active filter. Subscribe to the configured topic in the ntfy phone app to receive pushes; email goes to the configured recipient. The UI shows queued/completed deliveries. Filters and resume ranking are separate controls.
+6. Verify a scheduled poll finishes, live roles appear in the browser, and a naturally matching new role produces a recorded delivery received on the intended channel. Fixture tests do not establish live transport delivery.
+
+Render Free sleeps after 15 idle minutes and shares 750 instance hours per workspace/month. Alerts run in Actions independently of the sleeping website; schedules can be delayed. Free Supabase projects can pause after low activity. A Cloudflare quick tunnel is only a temporary development preview and still needs the laptop running. Nothing here promises an always-awake service or instant alerts.
+
+## Private workspace
 
 ```bash
-python3 poller/main.py --board-slice 25 --skip-alerts --verbose
-python3 -m uvicorn backend.main:app --reload --port 8000
-# open http://127.0.0.1:8000
+cp .env.example .env
+# Fill DATABASE_URL and ADMIN_PASSWORD; do not commit .env.
+.venv/bin/uvicorn backend.main:app --env-file .env --host 0.0.0.0 --port 8000
 ```
 
-### 2. Supabase (shared database)
+Without `ADMIN_PASSWORD`, live-data pages accept only localhost requests. With a password, HTTP Basic authentication protects the workspace (any username; configured password). Use HTTPS on deployment. The public demo always uses `demo.db`, even if `DATABASE_URL` is set. Resume upload accepts text-based PDF or UTF-8 text, up to 2 MB / ten PDF pages; scan-only PDFs require pasted text. Resumes and descriptions stay in your database. The local embedding model does not transmit them to an inference service.
 
-Needed so the GitHub Actions poller and the Render web app read/write the same data.
+Profiles support preferences, location restrictions, term, exclusions, and remote-only filtering. Applications support interested, applied, interview, offer, and rejected stages, plus notes. Job closure is separate from application status. Priority companies are polled in addition to the rotating board slice.
 
-1. Create a free project at <https://supabase.com>.
-2. Project Settings → Database → Connection string → **URI** (use the *pooled*
-   connection, port 6543, for serverless clients).
-3. That string is your `DATABASE_URL`. Tables are created automatically on first run.
+On a role's page, **Mark applied** records the first application time and marks it **Applied — done**. Completed applications leave the default discovery feed and stop producing new alerts. The Applications page retains their stages and notes. Each progress update writes an Excel workbook and a Google Sheets sync record to PostgreSQL in the same transaction. The free [Google Sheets bridge](docs/google-sheets.md) updates the owner's private Sheet in the background, with durable retries and protection against duplicate or out-of-order updates. Its pending count is visible in Applications. **Download application spreadsheet** exports a separate persistent Excel backup with company, role, location, term, stage, dates, URL, and notes. The public demo cannot sync or export private applications.
 
-### 3. Alert channels
+The live feed and alert worker require explicit evidence of a **United States work location**, an **internship or co-op**, and **summer 2027**. Unknown remote regions, unsupported seasons, and graduation-year-only references are excluded. This conservative scope may omit a relevant role until its source supplies enough evidence. Existing historical rows remain stored separately from the targeted discovery feed.
 
-**ntfy push (no signup):** pick a long, unguessable topic name — the topic *is* the
-secret. Install the ntfy app (iOS/Android) and subscribe to it. Set `NTFY_TOPIC`.
+## AI matching and evidence
 
-**Email:** enable 2FA on a Gmail account, then create an App Password at
-<https://myaccount.google.com/apppasswords>. Set `ALERT_EMAIL_FROM`, `ALERT_EMAIL_TO`
-and `GMAIL_APP_PASSWORD` (the App Password, never your real one).
+`shared/matching.py` chunks retained descriptions and resumes, runs `sentence-transformers/all-MiniLM-L6-v2` through FastEmbed/ONNX on CPU, and combines semantic similarity, exact tokens, and freshness. Model/text/version hashes cache vectors in the database. Profile constraints apply before ranking. `C++`, `C#`, `.NET`, and other exact terms are preserved. Keyword and weighted baselines are selectable; unavailable inference falls back visibly to keywords. The first model download and uncached large corpora are slower than cached requests.
 
-### 4. Free job API keys (optional but recommended)
+The default explanation is extractive: each skill comparison shows exact source passages. Optional **free, locally hosted Ollama** generation can be enabled with `OLLAMA_URL=http://localhost:11434` and `OLLAMA_MODEL=llama3.2:3b`. Ollama is not required or bundled. Generated quotes must be nonempty substrings of the correct source document; invalid output or timeouts use source excerpts instead. Evidence grounding verifies quotes, not every possible semantic interpretation. Relevance is not a probability of being hired, and “not demonstrated” does not mean a person lacks a skill.
 
-| Service | Where | Notes |
-|---|---|---|
-| Adzuna | <https://developer.adzuna.com/> | free tier, no card. Biggest win of the keyword layer. |
-| USAJOBS | <https://developer.usajobs.gov/apirequest/> | free, email signup. NASA / national labs / DoD internships. |
-| Reddit | <https://www.reddit.com/prefs/apps> → create app → **script** | free. The app's client ID and secret enable the Reddit megathread source. |
+Run `python evaluation/evaluate.py evaluation/demo_dataset.json`. See [evaluation/README.md](evaluation/README.md) for metrics, real-posting collection, labeling, and dev/test separation. The supplied benchmark is synthetic and must not be cited as production accuracy.
 
-Set `REDDIT_CLIENT_ID` and `REDDIT_CLIENT_SECRET` from the script app. Reddit
-**blocks unauthenticated API access**, so without these two the Reddit source skips
-itself (the other sources are unaffected). All three services are skipped gracefully
-if unset.
+## Pipeline
 
-`GITHUB_TOKEN` (optional) raises the rate limit on the GitHub search used to
-auto-discover new tracker repos — any classic personal access token with no scopes
-works. In GitHub Actions the built-in token covers this automatically; you only need
-to set one for heavy local runs.
+```text
+GitHub Actions schedule → tracker/search feeds → normalization and retained descriptions
+                      → priority + rotating ATS boards (8 worker threads)
+                      → dedupe, tagging, availability, incremental commits
+                      → PostgreSQL / SQLite ← FastAPI phone dashboard
+                      → durable delivery outbox → email digest / ntfy
+                      → source observations + run history → health view
+```
 
-`SEC_CONTACT_EMAIL` is not an API key — just your email address. SEC EDGAR **rejects
-requests with a 403** unless the User-Agent carries a real contact address, so company
-discovery silently finds nothing without it. It's read from the environment rather than
-committed, so a public repo never publishes your address.
+Supported boards: Greenhouse, Lever, Ashby, Workday, SmartRecruiters, Workable, and Recruitee. Tracker feeds include Simplify-compatible JSON, markdown trackers, Hacker News, and optional authenticated Reddit. Public career-site adapters also query Amazon and Microsoft's current careers endpoints. Search sources include optional Adzuna and USAJOBS credentials, Arbeitnow, and RemoteOK. Public endpoints can change or disappear; source health makes errors visible. Recruitee has announced a Careers Site API authentication change for February 2027; that adapter may need company-issued credentials then. No credentials are bypassed.
 
-### 5. GitHub Actions (the scheduler)
+Companies grow through observed ATS URLs, SEC EDGAR sector discovery, and live board probes. SEC requires a real `SEC_CONTACT_EMAIL` in the User-Agent; set it in secrets, not source code. A watchlist company is not necessarily resolved or polled directly.
 
-Push this repo to GitHub, then add each `.env` value under
-**Settings → Secrets and variables → Actions**: `DATABASE_URL`, `NTFY_TOPIC`,
-`ALERT_EMAIL_FROM`, `ALERT_EMAIL_TO`, `GMAIL_APP_PASSWORD`, `ADZUNA_APP_ID`,
-`ADZUNA_APP_KEY`, `USAJOBS_API_KEY`, `USAJOBS_EMAIL`, `SEC_CONTACT_EMAIL`,
-`REDDIT_CLIENT_ID`, `REDDIT_CLIENT_SECRET`. (`GITHUB_TOKEN` is provided by Actions
-automatically — no secret to add.)
+`python poller/main.py --board-slice 100 --resolve-slice 40 --verbose` runs ingestion and alerts. The workflow requests a run every five minutes, but GitHub can delay or queue it. The worker checks current Summer2027 trackers, polls manually prioritized boards each run, gives relevant boards another check after 15 minutes, and rotates through the remaining watchlist. Feed fingerprints skip unchanged ingestion. Frequent scheduled runs skip slow unknown-board resolution; the weekly discovery run handles it. Alerts are delivered after feed ingestion and after board batches with new roles, before the full sweep ends. This reduces discovery delay without promising instant or exhaustive coverage.
 
-The workflow polls every 30 minutes and runs SEC discovery weekly. Trigger it by hand
-from the Actions tab (**Run workflow**) to test.
+`--discovery` adds SEC discovery. `--skip-search` skips broad keyword sources. HN, Reddit, Microsoft, and Amazon are fetched at most once per six hours. `--board-slice 0` disables all board polling, including priority companies.
 
-> Use a **public** repo if you can — Actions minutes are unlimited for public repos,
-> while private repos get 2,000 min/month, which a 30-minute schedule would exhaust.
-> No secrets live in the code; they're all in GitHub Secrets.
+### Reliability semantics
 
-### 6. Render (the dashboard)
+- **Retries:** new candidates are discovered from a bounded recent window in the database, then persisted in a durable outbox. Failed deliveries remain pending beyond that window. New filters can match yesterday's postings.
+- **Delivery:** successful receipts are unique per posting/filter/channel. SMTP and ntfy do not provide a transaction shared with the database; a crash after delivery but before recording a receipt can repeat a message. This is at-least-once delivery, not guaranteed exactly-once delivery.
+- **Push batches:** only acknowledged posting IDs are recorded. Failed or oversized digests and remaining burst rows stay pending. Each delivery pass consolidates email into a digest grouped by filter; one poll can send more than one digest as additional boards finish.
+- **Deduplication:** canonical URL identity merges shared URLs. Exact company/title/location soft keys suppress a Jobright-wrapper/direct-link duplicate notification; they never merge records or suppress two different direct requisitions. Different wrapper titles/locations can still evade this conservative heuristic.
+- **Tagging:** descriptions are retained (up to 30,000 characters), and insert/retag use the same stored input. Legacy NULL descriptions preserve existing tags until text is harvested again.
+- **Availability:** every sighting updates `last_seen_at`. Explicit tracker inactivity closes tracker-origin rows. Three complete successful direct-board scans missing a posting close direct-origin rows; failed, truncated, or skipped scans never count. Direct-board evidence takes precedence over aggregator inactivity. A fresh direct sighting reopens a role.
+- **Isolation:** workers receive plain company snapshots instead of sharing ORM objects. Board progress commits every 50 companies. PostgreSQL advisory locks or a local file lock prevent overlapping pollers; CI also uses a concurrency group.
+- **Health:** run/source observations record counts, status, timing, and incomplete boards. Deterioration and recovery can notify through ntfy; unchanged failures stay quiet. Unconfigured Reddit is reported as skipped. Interrupted runs are identified on the next start.
 
-New → Web Service → connect this repo. `render.yaml` supplies the build and start
-commands. Set `DATABASE_URL` in the Render dashboard to the same Supabase string.
+Use `--skip-alerts` for baseline ingestion: newly inserted baseline rows stay ineligible for alerts on later runs. For a temporary notification pause, pause the filters instead. Existing receipts and pending deliveries are preserved by upgrades.
 
-Free instances sleep when idle, so the first request after a while takes ~30–60s.
+## Database upgrade
 
----
+Startup applies an additive, idempotent migration to old databases before creating new tables. It adds description/availability/tracking/priority columns and new outbox, profile, cache, and health tables; it does not drop existing data. SQLite upgrades are regression-tested, and CI also runs the migration against an isolated PostgreSQL 16 service.
 
-## Usage
+Before upgrading a live database, take a provider backup and inspect the branch changes. To inspect tagging changes: `python poller/retag.py --dry-run`. Legacy rows without retained descriptions are skipped deliberately. `python poller/dedupe.py --dry-run` previews URL collisions; the mutating mode preserves receipt/outbox history, notes, and application progress.
 
-Create filters on the **Filters** page. A filter matches when *any* selected sector
-or keyword hits, exclusions always veto, and location/remote constraints must hold.
-A filter with no sectors and no keywords matches every internship — useful as a
-catch-all. Each match alerts once per channel, ever (`alerts_sent` enforces it).
+## Alerts and deployment
 
-### Commands
+Set GitHub repository secrets from `.env.example`: database URL, Gmail sender/recipient/app password, ntfy topic, and optional source credentials. GitHub supplies `GITHUB_TOKEN` automatically for Actions. `NTFY_TOKEN` and `NTFY_BASE` support an existing protected topic/account or your own server. A token alone does not make a public topic private; configure topic access separately. Do not purchase a plan for this project.
+
+`render.yaml` is the private dashboard configuration. `render-demo.yaml` is the isolated free public demo. They must not share data. The app checks the database at `/healthz`. Test changes on the development branch before promoting the poller workflow or applying migrations to production.
+
+## Tests
 
 ```bash
-python3 poller/main.py --verbose              # normal poll
-python3 poller/main.py --board-slice 500      # poll more boards this run
-python3 poller/main.py --discovery            # + SEC company discovery (slow)
-python3 poller/main.py --skip-alerts          # store without notifying
-python3 poller/retag.py --dry-run             # preview retag after editing sectors.py
-python3 poller/dedupe.py --dry-run            # preview merging duplicate postings
-python3 tests/test_sectors.py                 # tagging regression tests
-python3 tests/test_alerts.py                  # alert delivery (unicode titles)
-python3 tests/test_dedupe.py                  # cross-source dedupe identity
+.venv/bin/pip install -r requirements-dev.txt
+.venv/bin/python -m pytest -q
 ```
 
-### Tuning sectors
-
-Edit the keyword lists in `shared/sectors.py`, run `python3 tests/test_sectors.py`,
-then `python3 poller/retag.py` to update already-stored postings.
-
-Two gotchas encoded in the tests, both found by real mis-tagging:
-- Keywords anchor **strictly at the start** of a word, or `arch intern` matches
-  "rese*arch intern*" and tags every research role as computer architecture.
-- The **trailing** edge stays loose so `firmware engineer` also matches "firmware
-  engineer*ing*".
-
----
-
-## Notes
-
-- **Runtime budget.** The watchlist is >1,500 companies; polling all of them every
-  run would take far too long (a full sweep is ~15 min and ~136k raw postings).
-  Boards are polled in a rotating slice ordered by least-recently-checked
-  (`--board-slice`, default 250), so the full list is covered over a few runs.
-  Tracker feeds are cheap and run every time.
-- **Crash safety.** Board results are committed every 50 companies rather than once
-  at the end, so a crash or runner timeout part-way through a long sweep keeps the
-  work already done instead of discarding it.
-- **First run.** Seed with `--skip-alerts` before enabling alerts, or every existing
-  posting counts as new and you get thousands of notifications at once.
-- **Dedupe.** Postings are keyed on the canonical URL *alone* — lowercased, with
-  tracking params and any `/application` suffix stripped. Sources disagree on
-  everything else: aggregators truncate titles ("Product Analyst Intern" vs
-  "…(Spring/Summer 2026)") and record company names differently ("Aquatic" vs
-  "Aquatic Capital Management"), so including either field re-creates duplicates.
-  Run `python3 poller/dedupe.py` to merge rows stored under an older key.
-- **Workday dates.** Workday returns relative text ("Posted 30+ Days Ago") rather
-  than a timestamp, so `first_seen_at` — not `posted_at` — drives new-posting alerts.
-- **Portable storage.** List-valued columns are stored as `|a|b|` strings rather than
-  Postgres arrays, so the identical schema runs on SQLite locally and Postgres in
-  production.
+The suite runs the original executable regression scripts as well as new assertions for delivery retry/receipts, closures, Workday caching, source adapters, migration, matching constraints, invalid citations, authentication, upload, and application updates. Standard tests use fixtures and mock external delivery; they do not send email or phone notifications. CI has no production credentials in its test job. Set `AI_ENABLED=0` for offline tests without model installation. Real-model demo warmup is a separate smoke check.

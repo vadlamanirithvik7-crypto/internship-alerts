@@ -29,9 +29,9 @@ def slug_candidates(name: str):
 
     words = base.split()
     candidates = [
-        "".join(words),              # advancedmicrodevices
-        "-".join(words),             # advanced-micro-devices
-        words[0] if words else "",   # advanced
+        "".join(words),  # advancedmicrodevices
+        "-".join(words),  # advanced-micro-devices
+        words[0] if words else "",  # advanced
     ]
     if len(words) > 1:
         candidates.append("".join(words[:2]))  # advancedmicro
@@ -65,7 +65,34 @@ def _probe_ashby(slug):
     return isinstance(data, dict) and bool(data.get("jobs"))
 
 
+def _probe_smartrecruiters(slug):
+    data = get_json(
+        f"https://api.smartrecruiters.com/v1/companies/{slug}/postings",
+        params={"limit": 1},
+        retries=0,
+        timeout=15,
+    )
+    return isinstance(data, dict) and bool(data.get("content"))
+
+
+def _probe_workable(slug):
+    data = get_json(
+        f"https://apply.workable.com/api/v1/widget/accounts/{slug}",
+        retries=0,
+        timeout=15,
+    )
+    return isinstance(data, dict) and bool(data.get("jobs"))
+
+
+def _probe_recruitee(slug):
+    data = get_json(f"https://{slug}.recruitee.com/api/offers/", retries=0, timeout=15)
+    return isinstance(data, dict) and bool(data.get("offers"))
+
+
 PROBES = [
+    ("smartrecruiters", _probe_smartrecruiters),
+    ("workable", _probe_workable),
+    ("recruitee", _probe_recruitee),
     ("greenhouse", _probe_greenhouse),
     ("lever", _probe_lever),
     ("ashby", _probe_ashby),

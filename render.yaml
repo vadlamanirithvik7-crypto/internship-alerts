@@ -3,11 +3,19 @@ services:
     name: internship-alerts
     runtime: python
     plan: free
-    buildCommand: pip install -r requirements.txt
+    buildCommand: pip install -r requirements-ai.txt && python scripts/demo.py --warm
     startCommand: uvicorn backend.main:app --host 0.0.0.0 --port $PORT
     healthCheckPath: /healthz
     envVars:
       - key: DATABASE_URL
-        sync: false # set in the Render dashboard to your Supabase connection string
+        sync: false # Same external PostgreSQL database as the scheduled worker.
+      - key: ADMIN_PASSWORD
+        sync: false # Owner-only workspace; /demo/ remains public.
+      - key: DEMO_MODE
+        value: "0"
+      - key: AI_ENABLED
+        value: "1"
+      - key: MODEL_CACHE
+        value: .model-cache
       - key: PYTHON_VERSION
         value: "3.12.7"

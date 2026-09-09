@@ -6,6 +6,7 @@ Several of these free endpoints reject requests without a browser-like User-Agen
 
 import logging
 import time
+import threading
 
 import requests
 
@@ -18,15 +19,28 @@ USER_AGENT = (
 
 DEFAULT_TIMEOUT = 30
 
-_session = None
+_local = threading.local()
 
 
-def session() -> requests.Session:
-    global _session
-    if _session is None:
-        _session = requests.Session()
-        _session.headers.update({"User-Agent": USER_AGENT, "Accept": "application/json"})
-    return _session
+def session():
+    if not hasattr(_local, "session"):
+        _local.session = requests.Session()
+        _local.session.headers.update(
+            {"User-Agent": USER_AGENT, "Accept": "application/json"}
+        )
+    return _local.session
+
+
+def reset_observation():
+    _local.failures = 0
+
+
+def failed_requests():
+    return getattr(_local, "failures", 0)
+
+
+def failed():
+    _local.failures = failed_requests() + 1
 
 
 def get_json(url, *, params=None, headers=None, timeout=DEFAULT_TIMEOUT, retries=2):
@@ -39,9 +53,10 @@ def get_json(url, *, params=None, headers=None, timeout=DEFAULT_TIMEOUT, retries
         try:
             resp = session().get(url, params=params, headers=headers, timeout=timeout)
             if resp.status_code == 404:
+                failed()
                 return None  # company/board doesn't exist - expected during resolution
             if resp.status_code == 429:
-                wait = 2 ** attempt
+                wait = 2**attempt
                 log.warning("rate limited by %s, sleeping %ss", url, wait)
                 time.sleep(wait)
                 continue
@@ -49,9 +64,11 @@ def get_json(url, *, params=None, headers=None, timeout=DEFAULT_TIMEOUT, retries
             return resp.json()
         except (requests.RequestException, ValueError) as exc:
             if attempt == retries:
+                failed()
                 log.warning("giving up on %s: %s", url, exc)
                 return None
             time.sleep(1 + attempt)
+    failed()
     return None
 
 
@@ -64,9 +81,10 @@ def get_text(url, *, params=None, headers=None, timeout=DEFAULT_TIMEOUT, retries
         try:
             resp = session().get(url, params=params, headers=headers, timeout=timeout)
             if resp.status_code == 404:
+                failed()
                 return None
             if resp.status_code == 429:
-                wait = 2 ** attempt
+                wait = 2**attempt
                 log.warning("rate limited by %s, sleeping %ss", url, wait)
                 time.sleep(wait)
                 continue
@@ -74,6 +92,7 @@ def get_text(url, *, params=None, headers=None, timeout=DEFAULT_TIMEOUT, retries
             return resp.text
         except requests.RequestException as exc:
             if attempt == retries:
+                failed()
                 log.warning("giving up on %s: %s", url, exc)
                 return None
             time.sleep(1 + attempt)

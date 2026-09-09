@@ -16,10 +16,8 @@ log = logging.getLogger(__name__)
 SOURCE = "simplify"
 
 FEEDS = [
-    "https://raw.githubusercontent.com/SimplifyJobs/Summer2026-Internships/dev/.github/scripts/listings.json",
-    "https://raw.githubusercontent.com/vanshb03/Summer2026-Internships/dev/.github/scripts/listings.json",
-    "https://raw.githubusercontent.com/SimplifyJobs/New-Grad-Positions/dev/.github/scripts/listings.json",
-    "https://raw.githubusercontent.com/vanshb03/New-Grad-2026/dev/.github/scripts/listings.json",
+    "https://raw.githubusercontent.com/SimplifyJobs/Summer2027-Internships/dev/.github/scripts/listings.json",
+    "https://raw.githubusercontent.com/vanshb03/Summer2027-Internships/dev/.github/scripts/listings.json",
 ]
 
 # We want internships and co-ops of any season, but not new-grad/full-time rows
@@ -60,11 +58,9 @@ def postings_from_listings(data, *, source=SOURCE, seen_ids=None):
     for row in data:
         if not isinstance(row, dict):
             continue
-        if not row.get("active", True):
-            continue
         if row.get("is_visible") is False:
             continue
-        if not _wanted_term(row.get("terms")):
+        if row.get("active", True) and not _wanted_term(row.get("terms")):
             continue
 
         url = row.get("url") or ""
@@ -87,6 +83,7 @@ def postings_from_listings(data, *, source=SOURCE, seen_ids=None):
                 posted_at=row.get("date_posted") or row.get("date_updated"),
             )
         )
+        postings[-1]["active"] = row.get("active", True)
     return postings
 
 

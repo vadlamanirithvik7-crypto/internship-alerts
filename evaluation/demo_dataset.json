@@ -1,0 +1,531 @@
+{
+  "description": "Synthetic demo fixture with author-supplied judgments; not a held-out real-job benchmark.",
+  "profiles": [
+    {
+      "id": 1,
+      "name": "Software engineering",
+      "preferences": "Backend, infrastructure, and developer tools internships.",
+      "resume_text": "Built a Python FastAPI service with PostgreSQL, REST APIs, and pytest regression tests. Deployed scheduled workers using Docker and GitHub Actions CI/CD.\nBuilt a Java TCP server with synchronized operations, background threads, and JUnit tests.\nDeveloped a React and TypeScript application backed by AWS Lambda.\nImplemented a C processor simulator and studied operating systems, data structures, and computer architecture."
+    },
+    {
+      "id": 2,
+      "name": "Embedded systems",
+      "preferences": "Embedded firmware, robotics, and real-time systems internships.",
+      "resume_text": "Programmed STM32 microcontrollers in C and C++ with FreeRTOS tasks. Integrated sensors over I2C and SPI and diagnosed UART serial communication.\nBuilt a robotics controller with PWM motor control and PID loops. Used oscilloscopes and logic analyzers to debug timing.\nWrote Python hardware test scripts and used Linux and Git for firmware development."
+    },
+    {
+      "id": 3,
+      "name": "Chip design",
+      "preferences": "Digital design, verification, and computer architecture internships.",
+      "resume_text": "Designed RTL modules in SystemVerilog and Verilog for an FPGA. Wrote testbenches and checked timing with synthesis tools.\nBuilt a pipelined CPU simulator in C, modeling hazards, stalls, virtual memory, and exceptions.\nStudied digital logic, computer architecture, and cache memory. Wrote Python scripts to compare simulation traces."
+    }
+  ],
+  "jobs": [
+    {
+      "id": 1,
+      "company_name": "Northstar Labs",
+      "title": "Backend Engineering Intern",
+      "location": "Austin, TX",
+      "source": "greenhouse",
+      "description": "Build Python services with FastAPI and PostgreSQL. Design REST APIs and write pytest regression tests. Collaborate on Docker deployments and CI/CD. Kubernetes experience is preferred.",
+      "term": "Summer 2027",
+      "remote": false
+    },
+    {
+      "id": 2,
+      "company_name": "Orbit Systems",
+      "title": "Developer Infrastructure Intern",
+      "location": "Remote, US",
+      "source": "ashby",
+      "description": "Develop internal developer tools and CI/CD automation in Python. Build Linux services, containerize workloads with Docker, and work with AWS. Experience writing automated tests is preferred.",
+      "term": "Summer 2027",
+      "remote": true
+    },
+    {
+      "id": 3,
+      "company_name": "Atlas Cloud",
+      "title": "Software Engineering Intern, Distributed Systems",
+      "location": "Seattle, WA",
+      "source": "lever",
+      "description": "Implement Java services and TCP networking. Investigate concurrency, synchronization, and database performance. Write JUnit tests and troubleshoot Linux production systems. Interest in distributed systems is required.",
+      "term": "Summer 2027",
+      "remote": false
+    },
+    {
+      "id": 4,
+      "company_name": "Forma Studio",
+      "title": "Frontend Engineering Intern",
+      "location": "San Francisco, CA",
+      "source": "greenhouse",
+      "description": "Build accessible React interfaces with TypeScript. Integrate REST APIs and test responsive layouts. Work with designers on a component library. Interest in browser performance is preferred.",
+      "term": "Summer 2027",
+      "remote": false
+    },
+    {
+      "id": 5,
+      "company_name": "Lumen Robotics",
+      "title": "Embedded Firmware Intern",
+      "location": "Austin, TX",
+      "source": "workday",
+      "description": "Write C++ firmware for STM32 microcontrollers and FreeRTOS. Integrate I2C and SPI sensors. Debug UART communication with logic analyzers. Work with motor control and real-time scheduling.",
+      "term": "Summer 2027",
+      "remote": false
+    },
+    {
+      "id": 6,
+      "company_name": "Pico Devices",
+      "title": "Firmware Validation Intern",
+      "location": "Boston, MA",
+      "source": "smartrecruiters",
+      "description": "Create Python hardware validation scripts for embedded devices. Debug C firmware and analyze SPI transactions. Use oscilloscopes and Linux test automation. Experience with continuous integration is useful.",
+      "term": "Summer 2027",
+      "remote": false
+    },
+    {
+      "id": 7,
+      "company_name": "Vector Silicon",
+      "title": "RTL Design Intern",
+      "location": "Austin, TX",
+      "source": "ashby",
+      "description": "Design RTL in SystemVerilog and Verilog. Build FPGA prototypes and testbenches. Analyze synthesis results and timing closure. Collaborate with engineers developing pipelined processor logic.",
+      "term": "Summer 2027",
+      "remote": false
+    },
+    {
+      "id": 8,
+      "company_name": "Helix Compute",
+      "title": "CPU Architecture Intern",
+      "location": "Santa Clara, CA",
+      "source": "greenhouse",
+      "description": "Model processor pipelines, caches, and virtual memory in C++. Analyze data hazards, branch prediction, and execution traces. Write Python scripts to compare simulation results. Coursework in computer architecture is required.",
+      "term": "Summer 2027",
+      "remote": false
+    },
+    {
+      "id": 9,
+      "company_name": "Cedar Networks",
+      "title": "Platform Engineering Intern",
+      "location": "Remote, US",
+      "source": "recruitee",
+      "description": "Develop Python automation for network services and Linux infrastructure. Write SQL queries, API integrations, and unit tests. Improve container deployment workflows with Docker and Git.",
+      "term": "Summer 2027",
+      "remote": true
+    },
+    {
+      "id": 10,
+      "company_name": "Aperture Chips",
+      "title": "Design Verification Intern",
+      "location": "San Jose, CA",
+      "source": "lever",
+      "description": "Develop UVM verification environments in SystemVerilog. Write constrained-random tests, collect coverage, and debug RTL. Python scripting and digital logic knowledge are preferred.",
+      "term": "Summer 2027",
+      "remote": false
+    },
+    {
+      "id": 11,
+      "company_name": "Meridian Motion",
+      "title": "Robotics Controls Intern",
+      "location": "Pittsburgh, PA",
+      "source": "workable",
+      "description": "Implement C++ control loops and sensor fusion for mobile robots. Tune PID motor controllers and analyze real-time behavior. Experience with ROS 2, Linux, and embedded programming is preferred.",
+      "term": "Summer 2027",
+      "remote": false
+    },
+    {
+      "id": 12,
+      "company_name": "Flux Energy",
+      "title": "Power Electronics Intern",
+      "location": "Austin, TX",
+      "source": "greenhouse",
+      "description": "Design buck converters and power supply PCBs. Measure efficiency and thermal performance using oscilloscopes. Familiarity with MOSFET selection, analog circuits, and electrical lab practices is required.",
+      "term": "Summer 2027",
+      "remote": false
+    },
+    {
+      "id": 13,
+      "company_name": "Canvas Data",
+      "title": "Data Engineering Intern",
+      "location": "New York, NY",
+      "source": "ashby",
+      "description": "Build Python and SQL data pipelines. Work with PostgreSQL schemas, scheduled batch processing, and data quality checks. Apache Spark and Airflow are preferred.",
+      "term": "Summer 2027",
+      "remote": false
+    },
+    {
+      "id": 14,
+      "company_name": "Oak Security",
+      "title": "Security Engineering Intern",
+      "location": "Remote, US",
+      "source": "lever",
+      "description": "Automate Linux security checks with Python. Investigate network protocols, harden systems, and write regression tests. Familiarity with TCP and container security is useful.",
+      "term": "Summer 2027",
+      "remote": true
+    },
+    {
+      "id": 15,
+      "company_name": "Keystone Design",
+      "title": "Product Design Intern",
+      "location": "Chicago, IL",
+      "source": "simplify",
+      "description": "Create user research plans and visual prototypes in Figma. Conduct interviews, document design decisions, and refine typography and visual systems.",
+      "term": "Summer 2027",
+      "remote": false
+    },
+    {
+      "id": 16,
+      "company_name": "Nimbus Research",
+      "title": "Machine Learning Research Intern",
+      "location": "Boston, MA",
+      "source": "greenhouse",
+      "description": "Train PyTorch models for computer vision. Design experiments for segmentation and detection. Experience with CUDA, deep learning research, and statistical evaluation is preferred.",
+      "term": "Summer 2027",
+      "remote": false
+    },
+    {
+      "id": 17,
+      "company_name": "Beacon Labs",
+      "title": "Embedded Software Intern",
+      "location": "Denver, CO",
+      "source": "ashby",
+      "description": "Build embedded C drivers for SPI peripherals and develop FreeRTOS applications. Diagnose timing issues and write Python scripts for hardware-in-the-loop tests.",
+      "term": "Summer 2027",
+      "remote": false
+    },
+    {
+      "id": 18,
+      "company_name": "Harbor Systems",
+      "title": "API Engineering Intern",
+      "location": "Austin, TX",
+      "source": "smartrecruiters",
+      "description": "Develop REST APIs in C# and .NET. Design SQL schemas, write unit tests, and work with Docker deployments. Familiarity with authentication and background processing is preferred.",
+      "term": "Summer 2027",
+      "remote": false
+    }
+  ],
+  "judgments": [
+    {
+      "profile_id": 1,
+      "job_id": 1,
+      "relevance": 3,
+      "split": "test"
+    },
+    {
+      "profile_id": 1,
+      "job_id": 2,
+      "relevance": 3,
+      "split": "test"
+    },
+    {
+      "profile_id": 1,
+      "job_id": 3,
+      "relevance": 3,
+      "split": "test"
+    },
+    {
+      "profile_id": 1,
+      "job_id": 4,
+      "relevance": 2,
+      "split": "test"
+    },
+    {
+      "profile_id": 1,
+      "job_id": 5,
+      "relevance": 0,
+      "split": "test"
+    },
+    {
+      "profile_id": 1,
+      "job_id": 6,
+      "relevance": 1,
+      "split": "test"
+    },
+    {
+      "profile_id": 1,
+      "job_id": 7,
+      "relevance": 0,
+      "split": "test"
+    },
+    {
+      "profile_id": 1,
+      "job_id": 8,
+      "relevance": 1,
+      "split": "test"
+    },
+    {
+      "profile_id": 1,
+      "job_id": 9,
+      "relevance": 3,
+      "split": "test"
+    },
+    {
+      "profile_id": 1,
+      "job_id": 10,
+      "relevance": 0,
+      "split": "test"
+    },
+    {
+      "profile_id": 1,
+      "job_id": 11,
+      "relevance": 0,
+      "split": "test"
+    },
+    {
+      "profile_id": 1,
+      "job_id": 12,
+      "relevance": 0,
+      "split": "test"
+    },
+    {
+      "profile_id": 1,
+      "job_id": 13,
+      "relevance": 2,
+      "split": "test"
+    },
+    {
+      "profile_id": 1,
+      "job_id": 14,
+      "relevance": 2,
+      "split": "test"
+    },
+    {
+      "profile_id": 1,
+      "job_id": 15,
+      "relevance": 0,
+      "split": "test"
+    },
+    {
+      "profile_id": 1,
+      "job_id": 16,
+      "relevance": 0,
+      "split": "test"
+    },
+    {
+      "profile_id": 1,
+      "job_id": 17,
+      "relevance": 0,
+      "split": "test"
+    },
+    {
+      "profile_id": 1,
+      "job_id": 18,
+      "relevance": 2,
+      "split": "test"
+    },
+    {
+      "profile_id": 2,
+      "job_id": 1,
+      "relevance": 0,
+      "split": "test"
+    },
+    {
+      "profile_id": 2,
+      "job_id": 2,
+      "relevance": 0,
+      "split": "test"
+    },
+    {
+      "profile_id": 2,
+      "job_id": 3,
+      "relevance": 0,
+      "split": "test"
+    },
+    {
+      "profile_id": 2,
+      "job_id": 4,
+      "relevance": 0,
+      "split": "test"
+    },
+    {
+      "profile_id": 2,
+      "job_id": 5,
+      "relevance": 3,
+      "split": "test"
+    },
+    {
+      "profile_id": 2,
+      "job_id": 6,
+      "relevance": 3,
+      "split": "test"
+    },
+    {
+      "profile_id": 2,
+      "job_id": 7,
+      "relevance": 1,
+      "split": "test"
+    },
+    {
+      "profile_id": 2,
+      "job_id": 8,
+      "relevance": 1,
+      "split": "test"
+    },
+    {
+      "profile_id": 2,
+      "job_id": 9,
+      "relevance": 0,
+      "split": "test"
+    },
+    {
+      "profile_id": 2,
+      "job_id": 10,
+      "relevance": 0,
+      "split": "test"
+    },
+    {
+      "profile_id": 2,
+      "job_id": 11,
+      "relevance": 3,
+      "split": "test"
+    },
+    {
+      "profile_id": 2,
+      "job_id": 12,
+      "relevance": 0,
+      "split": "test"
+    },
+    {
+      "profile_id": 2,
+      "job_id": 13,
+      "relevance": 0,
+      "split": "test"
+    },
+    {
+      "profile_id": 2,
+      "job_id": 14,
+      "relevance": 1,
+      "split": "test"
+    },
+    {
+      "profile_id": 2,
+      "job_id": 15,
+      "relevance": 0,
+      "split": "test"
+    },
+    {
+      "profile_id": 2,
+      "job_id": 16,
+      "relevance": 0,
+      "split": "test"
+    },
+    {
+      "profile_id": 2,
+      "job_id": 17,
+      "relevance": 3,
+      "split": "test"
+    },
+    {
+      "profile_id": 2,
+      "job_id": 18,
+      "relevance": 0,
+      "split": "test"
+    },
+    {
+      "profile_id": 3,
+      "job_id": 1,
+      "relevance": 0,
+      "split": "test"
+    },
+    {
+      "profile_id": 3,
+      "job_id": 2,
+      "relevance": 0,
+      "split": "test"
+    },
+    {
+      "profile_id": 3,
+      "job_id": 3,
+      "relevance": 0,
+      "split": "test"
+    },
+    {
+      "profile_id": 3,
+      "job_id": 4,
+      "relevance": 0,
+      "split": "test"
+    },
+    {
+      "profile_id": 3,
+      "job_id": 5,
+      "relevance": 1,
+      "split": "test"
+    },
+    {
+      "profile_id": 3,
+      "job_id": 6,
+      "relevance": 1,
+      "split": "test"
+    },
+    {
+      "profile_id": 3,
+      "job_id": 7,
+      "relevance": 3,
+      "split": "test"
+    },
+    {
+      "profile_id": 3,
+      "job_id": 8,
+      "relevance": 3,
+      "split": "test"
+    },
+    {
+      "profile_id": 3,
+      "job_id": 9,
+      "relevance": 0,
+      "split": "test"
+    },
+    {
+      "profile_id": 3,
+      "job_id": 10,
+      "relevance": 3,
+      "split": "test"
+    },
+    {
+      "profile_id": 3,
+      "job_id": 11,
+      "relevance": 0,
+      "split": "test"
+    },
+    {
+      "profile_id": 3,
+      "job_id": 12,
+      "relevance": 0,
+      "split": "test"
+    },
+    {
+      "profile_id": 3,
+      "job_id": 13,
+      "relevance": 0,
+      "split": "test"
+    },
+    {
+      "profile_id": 3,
+      "job_id": 14,
+      "relevance": 0,
+      "split": "test"
+    },
+    {
+      "profile_id": 3,
+      "job_id": 15,
+      "relevance": 0,
+      "split": "test"
+    },
+    {
+      "profile_id": 3,
+      "job_id": 16,
+      "relevance": 0,
+      "split": "test"
+    },
+    {
+      "profile_id": 3,
+      "job_id": 17,
+      "relevance": 1,
+      "split": "test"
+    },
+    {
+      "profile_id": 3,
+      "job_id": 18,
+      "relevance": 0,
+      "split": "test"
+    }
+  ]
+}

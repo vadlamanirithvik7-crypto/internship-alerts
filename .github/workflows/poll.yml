@@ -2,9 +2,9 @@ name: Poll for new internships
 
 on:
   schedule:
-    # Every 30 minutes. GitHub may delay scheduled runs under load, which is fine -
-    # alerts are deduped, so a late or doubled run never re-notifies you.
-    - cron: "*/30 * * * *"
+    # Every 5 minutes. GitHub may delay scheduled runs under load, which is fine -
+    # receipts dedupe completed sends; the outbox retries unsuccessful deliveries.
+    - cron: "*/5 * * * *"
   workflow_dispatch:
     inputs:
       discovery:
@@ -13,7 +13,7 @@ on:
         default: false
       board_slice:
         description: "How many company boards to poll this run"
-        default: "250"
+        default: "100"
 
 concurrency:
   # Never let a slow run overlap the next scheduled one and double-poll.
@@ -34,26 +34,24 @@ jobs:
           cache: pip
 
       - name: Install dependencies
-        run: pip install -r requirements.txt
+        run: pip install -r requirements.txt pytest httpx numpy
 
       - name: Run tests
-        # Cheap guard: bad tagging rules mis-route every alert, and a non-latin-1
-        # job title used to crash delivery outright.
-        run: |
-          python3 tests/test_sectors.py
-          python3 tests/test_alerts.py
-          python3 tests/test_dedupe.py
-          python3 tests/test_location.py
-          python3 tests/test_simplify.py
-          python3 tests/test_trackers.py
+        env:
+          AI_ENABLED: "0"
+        run: python -m pytest -q
 
       - name: Poll sources and send alerts
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          GOOGLE_SHEETS_WEBHOOK_URL: ${{ secrets.GOOGLE_SHEETS_WEBHOOK_URL }}
+          GOOGLE_SHEETS_SYNC_TOKEN: ${{ secrets.GOOGLE_SHEETS_SYNC_TOKEN }}
           ALERT_EMAIL_FROM: ${{ secrets.ALERT_EMAIL_FROM }}
           ALERT_EMAIL_TO: ${{ secrets.ALERT_EMAIL_TO }}
           GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
           NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+          NTFY_TOKEN: ${{ secrets.NTFY_TOKEN }}
+          NTFY_BASE: ${{ secrets.NTFY_BASE }}
           ADZUNA_APP_ID: ${{ secrets.ADZUNA_APP_ID }}
           ADZUNA_APP_KEY: ${{ secrets.ADZUNA_APP_KEY }}
           USAJOBS_API_KEY: ${{ secrets.USAJOBS_API_KEY }}
@@ -64,7 +62,8 @@ jobs:
           REDDIT_CLIENT_SECRET: ${{ secrets.REDDIT_CLIENT_SECRET }}
         run: |
           python3 poller/main.py \
-            --board-slice "${{ github.event.inputs.board_slice || '250' }}" \
+            --board-slice "${{ github.event.inputs.board_slice || '100' }}" \
+            --resolve-slice 0 \
             ${{ github.event.inputs.discovery == 'true' && '--discovery' || '' }} \
             --verbose
 
@@ -79,7 +78,7 @@ jobs:
       - name: Check if weekly slot
         id: slot
         run: |
-          if [ "$(date -u +%u)" = "7" ] && [ "$(date -u +%H)" = "03" ] && [ "$(date -u +%M)" -lt 30 ]; then
+          if [ "$(date -u +%u)" = "7" ] && [ "$(date -u +%H)" = "03" ] && [ "$(date -u +%M)" -lt 5 ]; then
             echo "run=true" >> "$GITHUB_OUTPUT"
           else
             echo "run=false" >> "$GITHUB_OUTPUT"
@@ -96,7 +95,7 @@ jobs:
 
       - name: Install dependencies
         if: steps.slot.outputs.run == 'true'
-        run: pip install -r requirements.txt
+        run: pip install -r requirements.txt pytest httpx numpy
 
       - name: Discover and resolve companies
         if: steps.slot.outputs.run == 'true'
