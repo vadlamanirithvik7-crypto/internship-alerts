@@ -5,7 +5,7 @@ import pytest
 from sqlalchemy import select, text
 
 from shared.db import Posting, ApplicationTask, ApplicationSync, ResumeProfile, pack_list, init_db
-from shared.eligibility import eligible, restriction_reasons
+from shared.eligibility import eligible, restriction_reasons, SEARCH_VERSION
 from shared.role_search import role_tags
 from poller import matcher
 from test_app import client
@@ -37,6 +37,7 @@ def test_stated_restrictions_are_excluded(description):
     'A bachelor degree is required. A master degree is preferred.',
     'Currently pursuing an undergraduate degree, graduating in 2028.',
     'U.S. citizenship is not required.',
+    'Must be eager to master new technologies and learn programming.',
     'We hire without regard to citizenship or permanent residency.',
     'Must be authorized to work in the United States. Sponsorship is not provided.',
     'Applicants pursuing a bachelor degree are eligible. Work alongside PhD researchers.',
@@ -144,7 +145,7 @@ def test_backfill_rechecks_existing_restrictions_and_roles(db):
     db.commit()
     init_db(db.get_bind())
     db.refresh(p)
-    assert p.target_eligible is False and p.search_version == 1
+    assert p.target_eligible is False and p.search_version == SEARCH_VERSION
     assert p.search_roles == '|software|'
 
 
@@ -170,6 +171,19 @@ def test_retired_worker_never_connects_or_submits(capsys):
     from applicant.worker import main
     assert main() == 0
     assert 'disabled' in capsys.readouterr().out
+
+
+def test_missing_requirements_stay_visible_for_manual_review(client):
+    c, _, Session = client
+    with Session() as db:
+        p = db.get(Posting, 1)
+        p.description = None
+        p.target_eligible = eligible(p.title, 'Austin, TX', 'Summer 2027', '')
+        assert p.target_eligible
+        db.commit()
+    assert 'data-posting="1"' in c.get('/').text
+    assert 'Requirements unavailable' in c.get('/').text
+    assert 'Requirements unavailable' in c.get('/jobs/1').text
 
 
 def test_phone_not_interested_button(client):

@@ -26,7 +26,7 @@ ROLE_PATTERNS = {
 
 def role_tags(title):
     title = (title or "").lower()
-    if re.search(r"\b(?:sales|recruiting|recruiter|marketing|finance|financial|accounting|business operations|product manager|product management|supply chain|human resources|data analyst|customer support|technical support)\b", title):
+    if re.search(r"\b(?:sales|recruiting|recruiter|marketing|finance|financial|accounting|business operations|product manager|product management|supply chain|human resources|data analyst|customer support|technical support|construction application|chemical|chemistry)\b", title):
         return []
     roles = [key for key, pattern in ROLE_PATTERNS.items() if re.search(pattern, title)]
     # Prefer the primary engineering discipline over a team/product qualifier.
