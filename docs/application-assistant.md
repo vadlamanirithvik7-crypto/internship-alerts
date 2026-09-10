@@ -25,3 +25,5 @@ The script rotates batches of twelve company names across up to 500 recent track
 ## Validation
 
 Run `pip install -r requirements-worker.txt pytest httpx`, `python -m playwright install chromium`, and `python -m pytest -q`. Chromium tests intercept all employer requests and send no real applications. CI also verifies PostgreSQL migrations, unchanged restart behavior and RLS on every table.
+
+Listings with missing descriptions remain in the feed, labeled **Requirements unavailable** for manual review. Relevant Workday listings fetch official job descriptions (up to 20 per board scan); an unavailable detail response never removes a discovered role by itself.

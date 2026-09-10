@@ -140,6 +140,7 @@ def fetch_workday(tenant: str, site: str, company_name: str = None, wd_num: str 
         base = f"https://{tenant}.{host}.myworkdayjobs.com"
         endpoint = f"{base}/wday/cxs/{tenant}/{site}/jobs"
         postings, seen_paths = [], set()
+        detail_attempts = 0
         found_host, complete = False, True
         for term in INTERN_SEARCH_TERMS:
             offset = 0
@@ -169,6 +170,16 @@ def fetch_workday(tenant: str, site: str, company_name: str = None, wd_num: str 
                     if not path or path in seen_paths:
                         continue
                     seen_paths.add(path)
+                    body = ""
+                    from shared.eligibility import eligible
+                    # Listing payloads omit qualifications. Fetch the official
+                    # detail for likely matches; missing bodies remain reviewable.
+                    if (detail_attempts < 20 and path.startswith("/job/")
+                            and eligible(job.get("title"), job.get("locationsText"))):
+                        detail_attempts += 1
+                        detail = get_json(f"{base}/wday/cxs/{tenant}/{site}{path}", timeout=12, retries=0) or {}
+                        info = detail.get("jobPostingInfo") or {}
+                        body = info.get("jobDescription") or ""
                     postings.append(
                         make_posting(
                             external_id=(job.get("bulletFields") or [None])[0],
@@ -177,6 +188,7 @@ def fetch_workday(tenant: str, site: str, company_name: str = None, wd_num: str 
                             url=f"{base}/en-US/{site}{path}",
                             location=job.get("locationsText") or "",
                             source="workday",
+                            description=body,
                         )
                     )
                 offset += len(jobs)

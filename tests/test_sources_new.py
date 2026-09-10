@@ -6,6 +6,43 @@ from poller import health
 from shared.db import Company, PollRun, utcnow
 
 
+def test_workday_reads_requirements_for_relevant_internship(monkeypatch):
+    client = Mock()
+    client.post.return_value.json.return_value = {
+        'jobPostings': [{'title': 'Software Engineering Intern Summer 2027',
+                         'locationsText': 'Austin, TX', 'externalPath': '/job/US/Intern_1'},
+                        {'title': 'Finance Intern Summer 2027',
+                         'locationsText': 'Austin, TX', 'externalPath': '/job/US/Finance_2'}],
+        'total': 2,
+    }
+    monkeypatch.setattr(ats, 'session', lambda: client)
+    detail = Mock(return_value={'jobPostingInfo': {'jobDescription': 'US citizenship is required.'}})
+    monkeypatch.setattr(ats, 'get_json', detail)
+    result = ats.fetch_workday('acme', 'Careers', 'Acme', 'wd5')
+    assert len(result) == 2
+    assert 'citizenship' in result[0]['description']
+    detail.assert_called_once_with('https://acme.wd5.myworkdayjobs.com/wday/cxs/acme/Careers/job/US/Intern_1', timeout=12, retries=0)
+    from shared.eligibility import eligible
+    p = result[0]
+    assert not eligible(p['title'], p['location'], p.get('term'), p['description'])
+
+
+def test_workday_missing_detail_does_not_remove_discovery(monkeypatch):
+    client = Mock()
+    client.post.return_value.json.return_value = {
+        'jobPostings': [{'title': 'Software Engineering Intern Summer 2027',
+                         'locationsText': 'Austin, TX', 'externalPath': '/job/US/Intern_1'}],
+        'total': 1,
+    }
+    monkeypatch.setattr(ats, 'session', lambda: client)
+    monkeypatch.setattr(ats, 'get_json', Mock(return_value=None))
+    result = ats.fetch_workday('acme', 'Careers', 'Acme', 'wd5')
+    assert len(result) == 1 and result.complete
+    from shared.eligibility import eligible
+    p = result[0]
+    assert eligible(p['title'], p['location'], p.get('term'), p['description'])
+
+
 def test_workday_valid_empty_stops_probing(monkeypatch):
     client = Mock()
     client.post.return_value.json.return_value = {"jobPostings": [], "total": 0}

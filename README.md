@@ -133,3 +133,5 @@ Set GitHub repository secrets from `.env.example`: database URL, Gmail sender/re
 ```
 
 The suite runs the original executable regression scripts as well as new assertions for delivery retry/receipts, closures, Workday caching, source adapters, migration, matching constraints, invalid citations, authentication, upload, and application updates. Standard tests use fixtures and mock external delivery; they do not send email or phone notifications. CI has no production credentials in its test job. Set `AI_ENABLED=0` for offline tests without model installation. Real-model demo warmup is a separate smoke check.
+
+Listings with missing descriptions remain in the feed, labeled **Requirements unavailable** for manual review. Relevant Workday listings fetch official job descriptions (up to 20 per board scan); an unavailable detail response never removes a discovered role by itself.

@@ -173,6 +173,19 @@ def test_retired_worker_never_connects_or_submits(capsys):
     assert 'disabled' in capsys.readouterr().out
 
 
+def test_missing_requirements_stay_visible_for_manual_review(client):
+    c, _, Session = client
+    with Session() as db:
+        p = db.get(Posting, 1)
+        p.description = None
+        p.target_eligible = eligible(p.title, 'Austin, TX', 'Summer 2027', '')
+        assert p.target_eligible
+        db.commit()
+    assert 'data-posting="1"' in c.get('/').text
+    assert 'Requirements unavailable' in c.get('/').text
+    assert 'Requirements unavailable' in c.get('/jobs/1').text
+
+
 def test_phone_not_interested_button(client):
     pw = pytest.importorskip('playwright.sync_api')
     with local_app(client[1].app) as origin, pw.sync_playwright() as runtime:
