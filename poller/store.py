@@ -120,7 +120,7 @@ def upsert_postings(
     now = utcnow()
     for offset in range(0, len(items), 400):
         chunk = items[offset : offset + 400]
-        from shared.eligibility import eligible
+        from shared.eligibility import eligible, SEARCH_VERSION
 
         existing_query = select(Posting).where(
             Posting.raw_hash.in_([k for k, _ in chunk])
@@ -160,7 +160,7 @@ def upsert_postings(
                 if row and row.source not in DIRECT:
                     row.closed_at = row.closed_at or now
                 continue
-            from shared.eligibility import eligible
+            from shared.eligibility import eligible, SEARCH_VERSION
 
             if (
                 target_only
@@ -223,14 +223,14 @@ def upsert_postings(
                     "location": row.location,
                 }
             )
-            from shared.eligibility import eligible
+            from shared.eligibility import eligible, SEARCH_VERSION
 
             row.target_eligible = eligible(
                 row.title, row.location, row.term, row.description
             )
             from shared.role_search import role_tags
             row.search_roles = pack_list(role_tags(row.title))
-            row.search_version = 1
+            row.search_version = SEARCH_VERSION
         session.flush()
     return created
 

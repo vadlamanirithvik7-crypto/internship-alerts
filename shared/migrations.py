@@ -48,14 +48,14 @@ def migrate(conn):
             indexes = {index["name"] for index in inspect(conn).get_indexes("postings")}
             if "ix_postings_soft_key" not in indexes:
                 conn.execute(text("CREATE INDEX ix_postings_soft_key ON postings (soft_key)"))
-            from shared.eligibility import eligible
+            from shared.eligibility import eligible, SEARCH_VERSION
             from shared.role_search import role_tags
 
             while True:
                 rows = (
                     conn.execute(
                         text(
-                            "SELECT id,title,location,term,description FROM postings WHERE target_eligible IS NULL OR search_version IS NULL OR search_version < 1 LIMIT 500"
+                            f"SELECT id,title,location,term,description FROM postings WHERE target_eligible IS NULL OR search_version IS NULL OR search_version < {SEARCH_VERSION} LIMIT 500"
                         )
                     )
                     .mappings()
@@ -72,7 +72,7 @@ def migrate(conn):
                 for (value, roles), ids in groups.items():
                     if ids:
                         conn.execute(text(
-                            "UPDATE postings SET target_eligible=:value,search_roles=:roles,search_version=1 WHERE id IN :ids"
+                            f"UPDATE postings SET target_eligible=:value,search_roles=:roles,search_version={SEARCH_VERSION} WHERE id IN :ids"
                         ).bindparams(bindparam("ids", expanding=True)), {"value": value, "roles": roles, "ids": ids})
             if "ix_postings_target_eligible" not in indexes:
                 conn.execute(text("CREATE INDEX ix_postings_target_eligible ON postings (target_eligible)"))

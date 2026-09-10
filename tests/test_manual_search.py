@@ -5,7 +5,7 @@ import pytest
 from sqlalchemy import select, text
 
 from shared.db import Posting, ApplicationTask, ApplicationSync, ResumeProfile, pack_list, init_db
-from shared.eligibility import eligible, restriction_reasons
+from shared.eligibility import eligible, restriction_reasons, SEARCH_VERSION
 from shared.role_search import role_tags
 from poller import matcher
 from test_app import client
@@ -145,7 +145,7 @@ def test_backfill_rechecks_existing_restrictions_and_roles(db):
     db.commit()
     init_db(db.get_bind())
     db.refresh(p)
-    assert p.target_eligible is False and p.search_version == 1
+    assert p.target_eligible is False and p.search_version == SEARCH_VERSION
     assert p.search_roles == '|software|'
 
 

@@ -5,6 +5,8 @@ from poller.normalize import clean_location, US_STATE_NAMES, US_STATE_ABBREVS
 from shared.sectors import is_internship
 from shared.role_search import role_tags
 
+SEARCH_VERSION = 2
+
 _COUNTRY = re.compile(
     r"\b(?:united states(?: of america)?|usa|u\.s\.a\.?|u\.s\.?|us)\b", re.I
 )
