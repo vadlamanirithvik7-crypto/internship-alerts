@@ -1,0 +1,37 @@
+name: Selected application worker
+on:
+  schedule:
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: selected-application-worker
+  cancel-in-progress: false
+jobs:
+  apply:
+    # Public-repository hosted runners only. Never opt into a paid runner.
+    if: github.event.repository.private == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: requirements-worker.txt
+      - run: pip install -r requirements-worker.txt
+      - uses: actions/cache@v4
+        id: browser
+        with:
+          path: ~/.cache/ms-playwright
+          key: chromium-${{ runner.os }}-${{ hashFiles('requirements-worker.txt') }}
+      - run: python -m playwright install --with-deps chromium
+      - name: Process owner-selected applications
+        run: python -m applicant.worker --limit 3
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          GOOGLE_SHEETS_WEBHOOK_URL: ${{ secrets.GOOGLE_SHEETS_WEBHOOK_URL }}
+          GOOGLE_SHEETS_SYNC_TOKEN: ${{ secrets.GOOGLE_SHEETS_SYNC_TOKEN }}
+      # Never upload browser traces, screenshots, resumes or database dumps.

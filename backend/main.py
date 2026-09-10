@@ -68,7 +68,7 @@ async def access_control(request, call_next):
         request.scope["path"].removeprefix(request.scope.get("root_path", "")) or "/"
     )
     request.state.route_path = route_path
-    if route_path not in ("/healthz",) and not route_path.startswith("/static/"):
+    if route_path not in ("/healthz", "/integrations/mail") and not route_path.startswith("/static/"):
         if request.state.demo:
             if request.method not in ("GET", "HEAD"):
                 return JSONResponse(
@@ -499,6 +499,17 @@ def update_status(
     p = db.get(Posting, posting_id)
     if not p:
         raise HTTPException(404)
+    # A manual applied/stage update must stop an in-flight preparation task.
+    from shared.db import ApplicationTask
+    task = db.scalar(select(ApplicationTask).where(ApplicationTask.posting_id == p.id).with_for_update())
+    if task and task.state == "submitting":
+        raise HTTPException(409, "Submission is in progress. Refresh its status before changing this role.")
+    if task and status in ("applied", "interview", "offer", "rejected"):
+        task.state = "submitted"
+        task.submitted_at = task.submitted_at or utcnow()
+        task.confirmation = "Owner recorded application progress manually."
+        task.detail = "Tracked as applied by the owner."
+        task.updated_at = utcnow()
     p.status = status
     p.status_updated_at = utcnow()
     if status == "applied" and p.applied_at is None:
@@ -707,4 +718,6 @@ demo_app.include_router(app.router)
 demo_app.mount(
     "/static", StaticFiles(directory=os.path.join(BASE_DIR, "static")), name="static"
 )
+from backend.apply_routes import register as register_application_routes
+register_application_routes(app, templates, get_db)
 app.mount("/demo", demo_app)

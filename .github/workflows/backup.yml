@@ -1,0 +1,33 @@
+name: Encrypted database backup
+on:
+  push:
+    branches: [codex/application-assistant]
+    paths: ['.github/workflows/backup.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: database-backup
+  cancel-in-progress: false
+jobs:
+  backup:
+    if: github.actor == 'vadlamanirithvik7-crypto' && github.event.repository.private == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install -r requirements.txt cryptography
+      - run: python -m scripts.backup_database
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: encrypted-application-upgrade-backup
+          path: |
+            before-applications.dump.encrypted
+            backup-key.encrypted
+          retention-days: 1
+          if-no-files-found: error
