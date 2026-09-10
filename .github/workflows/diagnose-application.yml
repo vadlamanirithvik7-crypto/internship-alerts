@@ -1,0 +1,34 @@
+name: Read-only application diagnostics
+on:
+  push:
+    branches: [codex/fix-perpay-apply]
+    paths: ['.github/workflows/diagnose-application.yml']
+permissions:
+  contents: read
+jobs:
+  inspect:
+    if: github.actor == 'vadlamanirithvik7-crypto'
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install -r requirements.txt
+      - name: Inspect Perpay routing and queue only
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          python - <<'PY'
+          import json
+          from sqlalchemy import select, func
+          from shared.db import get_engine,get_session_factory,Posting,ApplicationTask,ApplicationWorker,StoredResume,ApplicantSettings
+          with get_session_factory(get_engine())() as db:
+              ps=list(db.scalars(select(Posting).where(func.lower(Posting.company_name).contains('perpay')).order_by(Posting.id.desc()).limit(12)))
+              for p in ps:
+                  t=db.scalar(select(ApplicationTask).where(ApplicationTask.posting_id==p.id))
+                  print(json.dumps({'posting_id':p.id,'title':p.title,'url':p.url,'status':p.status,'closed':str(p.closed_at),'eligible':p.target_eligible,'task':{'id':t.id,'state':t.state,'detail':t.detail,'updated':str(t.updated_at)} if t else None}))
+              w=db.get(ApplicationWorker,1)
+              print(json.dumps({'worker_last_seen':str(w.last_seen_at) if w else None,'active_resumes':db.scalar(select(func.count()).select_from(StoredResume).where(StoredResume.active.is_(True))),'applicant_settings_saved':db.get(ApplicantSettings,1) is not None}))
+          PY
