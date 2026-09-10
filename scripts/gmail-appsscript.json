@@ -1,0 +1,11 @@
+{
+  "timeZone": "America/Chicago",
+  "runtimeVersion": "V8",
+  "exceptionLogging": "NONE",
+  "dependencies": {"enabledAdvancedServices": [{"userSymbol": "Gmail", "version": "v1", "serviceId": "gmail"}]},
+  "oauthScopes": [
+    "https://www.googleapis.com/auth/gmail.readonly",
+    "https://www.googleapis.com/auth/script.external_request",
+    "https://www.googleapis.com/auth/script.scriptapp"
+  ]
+}

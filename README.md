@@ -65,6 +65,12 @@ On a role's page, **Mark applied** records the first application time and marks 
 
 The live feed and alert worker require explicit evidence of a **United States work location**, an **internship or co-op**, and **summer 2027**. Unknown remote regions, unsupported seasons, and graduation-year-only references are excluded. This conservative scope may omit a relevant role until its source supplies enough evidence. Existing historical rows remain stored separately from the targeted discovery feed.
 
+## Selected application assistant
+
+The private app now has a separate **Apply with my resume** flow: save your details, upload three original PDFs, choose a role and resume, answer missing employer questions, and follow its submission status. Supported native Lever/Greenhouse forms can be submitted by a free GitHub Actions browser worker. Custom controls, accounts, CAPTCHA and other ATS flows require a visible handoff. Confirmed applications leave discovery and enter the existing Google Sheets sync; uncertain results are never automatically resubmitted.
+
+An optional owner-authorized Gmail read-only script tracks related receipts, interviews, rejections and next steps. Connecting the correct mailbox requires a new Google permission. See [setup, support boundaries and reliability details](docs/application-assistant.md). No paid service is required, and no real application is sent merely by deploying this code.
+
 ## AI matching and evidence
 
 `shared/matching.py` chunks retained descriptions and resumes, runs `sentence-transformers/all-MiniLM-L6-v2` through FastEmbed/ONNX on CPU, and combines semantic similarity, exact tokens, and freshness. Model/text/version hashes cache vectors in the database. Profile constraints apply before ranking. `C++`, `C#`, `.NET`, and other exact terms are preserved. Keyword and weighted baselines are selectable; unavailable inference falls back visibly to keywords. The first model download and uncached large corpora are slower than cached requests.
