@@ -10,6 +10,7 @@ import json
 import os
 import sys
 from datetime import datetime, timedelta
+from typing import Literal
 
 from fastapi import (
     Depends,
@@ -466,8 +467,10 @@ def healthz(db=Depends(get_db)):
     }
 
 
+# Old feed links contain ?profile= when no matching profile has been created.
+# Treat that as the default, while continuing to reject nonnumeric profile IDs.
 @app.get("/jobs/{posting_id}")
-def job_detail(request: Request, posting_id: int, profile: int = 0, db=Depends(get_db)):
+def job_detail(request: Request, posting_id: int, profile: int | Literal[""] = 0, db=Depends(get_db)):
     from shared.matching import explain, rank
 
     p = db.get(Posting, posting_id)
@@ -581,7 +584,7 @@ def company_priority(company_id: int, db=Depends(get_db)):
 
 
 @app.get("/profile")
-def profile_page(request: Request, profile: int = 0, db=Depends(get_db)):
+def profile_page(request: Request, profile: int | Literal[""] = 0, db=Depends(get_db)):
     profiles = list(db.scalars(select(ResumeProfile).order_by(ResumeProfile.id)))
     selected = next(
         (p for p in profiles if p.id == profile), profiles[0] if profiles else None
