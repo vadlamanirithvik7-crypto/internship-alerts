@@ -111,6 +111,8 @@ class Posting(Base):
     soft_key = Column(String(64), nullable=True, index=True)
     alert_eligible = Column(Boolean, nullable=False, default=True, server_default="1")
     target_eligible = Column(Boolean, nullable=True, index=True)
+    search_roles = Column(Text, nullable=True)
+    search_version = Column(Integer, nullable=True)
     applied_at = Column(DateTime, nullable=True)
     status_updated_at = Column(DateTime, nullable=True)
 

@@ -228,6 +228,9 @@ def upsert_postings(
             row.target_eligible = eligible(
                 row.title, row.location, row.term, row.description
             )
+            from shared.role_search import role_tags
+            row.search_roles = pack_list(role_tags(row.title))
+            row.search_version = 1
         session.flush()
     return created
 

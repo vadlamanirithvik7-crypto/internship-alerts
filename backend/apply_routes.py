@@ -1,9 +1,8 @@
-"""Private, phone-friendly resume, application queue and mailbox pages."""
+"""Private, phone-friendly resume library and mailbox pages."""
 import hashlib
 import hmac
 import json
 import secrets
-from datetime import timedelta
 from io import BytesIO
 from pathlib import Path
 from zipfile import ZipFile
@@ -11,10 +10,10 @@ from zipfile import ZipFile
 from fastapi import Depends, HTTPException, Request, BackgroundTasks, APIRouter
 from fastapi.responses import RedirectResponse, Response
 from sqlalchemy import select
-from shared.db import (ApplicantSettings, StoredResume, Posting, ApplicationTask,
-                       ApplicationWorker, MailConnection, MailEvent, utcnow)
-from shared.applying import (PROFILE_FIELDS, validate_profile, store_resume, queue_application,
-                             mark_confirmed, json_data, form_digest, application_url)
+from shared.db import (ApplicantSettings, StoredResume, Posting,
+                       MailConnection, MailEvent, utcnow)
+from shared.applying import (PROFILE_FIELDS, validate_profile, store_resume,
+                             json_data)
 
 
 def register(app, templates, get_db):
@@ -28,12 +27,6 @@ def register(app, templates, get_db):
     app = APIRouter(dependencies=[Depends(private_only)])
     def render(request, template, context):
         return templates.TemplateResponse(request, template, context)
-
-    def require_task(db, task_id):
-        task = db.scalar(select(ApplicationTask).where(ApplicationTask.id == task_id).with_for_update())
-        if task is None:
-            raise HTTPException(404, "Application not found")
-        return task
 
     @app.get("/apply-settings")
     def settings_page(request: Request, db=Depends(get_db)):
@@ -97,146 +90,25 @@ def register(app, templates, get_db):
         return RedirectResponse("/apply-settings#resumes", 303)
 
     @app.get("/jobs/{posting_id}/apply")
-    def apply_page(request: Request, posting_id: int, db=Depends(get_db)):
+    def open_application(posting_id: int, db=Depends(get_db)):
         posting = db.get(Posting, posting_id)
-        if posting is None:
+        if not posting:
             raise HTTPException(404)
-        task = db.scalar(select(ApplicationTask).where(ApplicationTask.posting_id == posting_id))
-        if task:
-            return RedirectResponse(f"/apply-tasks/{task.id}", 303)
-        settings = db.get(ApplicantSettings, 1)
-        return render(request, "apply_choose.html", {
-            "p": posting, "settings": settings,
-            "values": json_data(settings.data) if settings else {},
-            "supported": application_url(posting.url),
-            "resumes": list(db.scalars(select(StoredResume).where(StoredResume.active.is_(True)).order_by(StoredResume.id))),
-        })
+        from urllib.parse import urlsplit
+        target = urlsplit(posting.url)
+        if target.scheme not in ("http", "https") or not target.netloc or target.username or target.password:
+            raise HTTPException(422, "This employer link is unavailable")
+        return RedirectResponse(posting.url, 303)
 
     @app.post("/jobs/{posting_id}/apply")
-    async def start_apply(request: Request, posting_id: int, db=Depends(get_db)):
-        form = await request.form()
-        try:
-            existing = db.scalar(select(ApplicationTask).where(ApplicationTask.posting_id == posting_id))
-            if existing:
-                return RedirectResponse(f"/apply-tasks/{existing.id}", 303)
-            upload = form.get("resume")
-            if upload and hasattr(upload, "read") and upload.filename:
-                resume = store_resume(db, str(form.get("name", "")), upload.filename, await upload.read(2_000_001))
-                resume_id = resume.id
-            else:
-                resume_id = int(form.get("resume_id", "0"))
-            task = queue_application(db, posting_id, resume_id)
-        except ValueError as e:
-            raise HTTPException(422, str(e)) from None
-        db.commit()
-        return RedirectResponse(f"/apply-tasks/{task.id}", 303)
+    @app.post("/apply-tasks/{rest:path}")
+    def removed_auto_apply():
+        raise HTTPException(410, "Automatic applications have been removed. Open the employer site and apply yourself.")
 
     @app.get("/apply-tasks")
-    def queue_page(request: Request, db=Depends(get_db)):
-        rows = db.execute(select(ApplicationTask, Posting).join(Posting).order_by(ApplicationTask.created_at.desc()).limit(100)).all()
-        worker = db.get(ApplicationWorker, 1)
-        return render(request, "apply_queue.html", {"rows": rows, "worker": worker,
-            "worker_recent": worker and worker.last_seen_at > utcnow() - timedelta(minutes=30)})
-
-    @app.get("/apply-tasks/{task_id}")
-    def task_page(request: Request, task_id: int, db=Depends(get_db)):
-        task = db.get(ApplicationTask, task_id)
-        if task is None:
-            raise HTTPException(404)
-        return render(request, "apply_task.html", {"task": task, "p": db.get(Posting, task.posting_id),
-            "resume": db.get(StoredResume, task.resume_id), "applicant": json_data(task.applicant),
-            "questions": json.loads(task.questions), "answers": json_data(task.answers),
-            "resumes": list(db.scalars(select(StoredResume).where(StoredResume.active.is_(True))))})
-
-    @app.post("/apply-tasks/{task_id}/resume")
-    async def change_resume(request: Request, task_id: int, db=Depends(get_db)):
-        task = require_task(db, task_id)
-        if task.state not in ("queued", "needs_info", "needs_review", "needs_action", "cancelled") or task.submission_started_at:
-            raise HTTPException(409, "Wait for the worker before changing this application's resume.")
-        form = await request.form()
-        try:
-            resume = db.get(StoredResume, int(form.get("resume_id", "0")))
-        except ValueError:
-            resume = None
-        if not resume or not resume.active:
-            raise HTTPException(422, "Choose an available resume.")
-        task.resume_id, task.answers, task.questions, task.reviewed_digest = resume.id, "{}", "[]", ""
-        task.state = "queued" if application_url(db.get(Posting, task.posting_id).url) else "needs_action"
-        task.detail = "Resume changed. Earlier employer-specific answers were cleared; open the employer site if manual completion is needed."
-        task.updated_at = utcnow()
-        db.commit()
-        return RedirectResponse(f"/apply-tasks/{task_id}", 303)
-
-    @app.post("/apply-tasks/{task_id}/answers")
-    async def answer_questions(request: Request, task_id: int, db=Depends(get_db)):
-        form = await request.form()
-        task = require_task(db, task_id)
-        if task.state != "needs_info":
-            raise HTTPException(409, "This application is no longer waiting for answers. Refresh the page.")
-        answers = json_data(task.answers)
-        for q in json.loads(task.questions):
-            if q["answered"] or q["type"] == "file":
-                continue
-            value = str(form.get(q["key"], "")).strip()
-            if len(value) > min(5000, q["maxlength"]):
-                raise HTTPException(422, "One of your answers is too long.")
-            if q["required"] and (not value or (q["type"] == "checkbox" and value != "yes")):
-                raise HTTPException(422, "Answer every required question. If you cannot agree to a required statement, cancel or open the employer page.")
-            if q["type"] in ("select-one", "radio") and value and value not in [o["value"] for o in q["options"]]:
-                raise HTTPException(422, "Choose one of the employer's listed options.")
-            if q["type"] == "checkbox" and value not in ("yes", "no", ""):
-                raise HTTPException(422, "Choose Yes or No.")
-            answers[q["key"]] = value
-        task.answers, task.state = json.dumps(answers), "queued"
-        task.reviewed_digest, task.detail = "", "Answers saved. Waiting for the application worker."
-        task.updated_at = utcnow()
-        db.commit()
-        return RedirectResponse(f"/apply-tasks/{task_id}", 303)
-
-    @app.post("/apply-tasks/{task_id}/review")
-    def approve_review(task_id: int, db=Depends(get_db)):
-        task = require_task(db, task_id)
-        if task.state != "needs_review":
-            raise HTTPException(409, "Refresh this application's current status.")
-        task.reviewed_digest = form_digest(json.loads(task.questions))
-        task.state, task.updated_at = "queued", utcnow()
-        task.detail = "Approved for submission. Waiting for the application worker."
-        db.commit()
-        return RedirectResponse(f"/apply-tasks/{task_id}", 303)
-
-    @app.post("/apply-tasks/{task_id}/retry")
-    def retry_preparation(task_id: int, db=Depends(get_db)):
-        task = require_task(db, task_id)
-        if task.state not in ("needs_action", "cancelled") or task.submission_started_at:
-            raise HTTPException(409, "This application cannot safely be retried. Check its current status.")
-        if not application_url(db.get(Posting, task.posting_id).url):
-            raise HTTPException(422, "This employer requires manual completion.")
-        task.state, task.updated_at = "queued", utcnow()
-        task.detail = "Waiting to retry preparation."
-        db.commit()
-        return RedirectResponse(f"/apply-tasks/{task_id}", 303)
-
-    @app.post("/apply-tasks/{task_id}/cancel")
-    def cancel(task_id: int, db=Depends(get_db)):
-        task = require_task(db, task_id)
-        if task.state not in ("queued", "needs_info", "needs_review", "needs_action") or task.submission_started_at:
-            raise HTTPException(409, "The worker is processing this application. Refresh its status before taking another action.")
-        task.state, task.updated_at = "cancelled", utcnow()
-        task.detail = "Cancelled before submission."
-        db.commit()
-        return RedirectResponse(f"/apply-tasks/{task_id}", 303)
-
-    @app.post("/apply-tasks/{task_id}/confirm")
-    async def confirm_manual(request: Request, task_id: int, background_tasks: BackgroundTasks, db=Depends(get_db)):
-        form = await request.form()
-        task = require_task(db, task_id)
-        if task.state not in ("needs_action", "uncertain") or form.get("confirmed") != "yes":
-            raise HTTPException(409, "Confirm only after the employer has accepted your application.")
-        mark_confirmed(db, task, "Owner verified submission on the employer site or in a confirmation email.")
-        db.commit()
-        from shared.google_sheet import sync_pending
-        background_tasks.add_task(sync_pending, db.get_bind())
-        return RedirectResponse(f"/apply-tasks/{task_id}", 303)
+    @app.get("/apply-tasks/{rest:path}")
+    def old_queue():
+        return RedirectResponse("/applications", 303)
 
     @app.get("/mail-updates")
     def mail_page(request: Request, db=Depends(get_db)):

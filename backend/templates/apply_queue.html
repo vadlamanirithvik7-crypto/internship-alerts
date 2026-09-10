@@ -1,6 +1,0 @@
-{% extends 'base.html' %}{% block title %}Apply queue · Radar{% endblock %}{% block content %}
-<div class="page-heading"><div><span class="eyebrow">ONE OPPORTUNITY AT A TIME</span><h1>Apply queue</h1><p>Your selected roles, saved resumes and questions that need an answer.</p></div></div>
-<div class="assistant-links"><a class="button" href="/">Find a role</a><a href="/apply-settings">Resumes & details →</a><a href="/mail-updates">Email updates →</a></div>
-<p class="muted">{% if worker_recent %}Worker connected · checked {{worker.last_seen_at.strftime('%H:%M')}} UTC.{% else %}Waiting for the application worker{% if worker %}; last checked {{worker.last_seen_at.strftime('%b %d, %H:%M')}} UTC{% endif %}.{% endif %} Free scheduled runs can be delayed. Refresh to see progress.</p>
-{% for task,p in rows %}<a class="panel task-card" href="/apply-tasks/{{task.id}}"><div><span class="eyebrow">{{p.company_name}}</span><h2>{{p.title}}</h2><p>{{task.detail}}</p></div><span class="pill">{{task.state.replace('_',' ')|title}} →</span></a>{% else %}<section class="panel"><h2>Your next application starts with a role.</h2><p>Open an opportunity and choose Apply with my resume.</p><a href="/">Explore opportunities →</a></section>{% endfor %}
-{% endblock %}
