@@ -24,6 +24,31 @@ function toast(message) {
 function statusFor(id, fallback) {
   return saved[id]?.status || fallback || "new";
 }
+document.querySelectorAll("[data-dismiss]").forEach((form) => {
+  const id = form.dataset.dismiss;
+  const card = form.closest("[data-posting]");
+  if (demo && statusFor(id, card.dataset.status) === "not_interested") card.hidden = true;
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const button = form.querySelector("button");
+    button.disabled = true;
+    try {
+      if (demo) {
+        saved[id] = { ...saved[id], status: "not_interested" };
+        persist();
+      } else {
+        const response = await fetch(form.action, { method: "POST", headers: { Accept: "application/json" }, body: new FormData(form) });
+        if (!response.ok) throw new Error("Dismiss failed");
+      }
+      card.hidden = true;
+      const count = document.querySelector(".section-heading .count");
+      if (count) count.textContent = String(Math.max(0, Number(count.textContent) - 1));
+      toast("Hidden. You can restore it from Applications → Not interested.");
+    } catch {
+      toast("Could not hide this role. Please try again.");
+    } finally { button.disabled = false; }
+  });
+});
 document.querySelectorAll("[data-save]").forEach((button) => {
   const id = button.dataset.save;
   const card = button.closest("[data-posting]");
@@ -94,10 +119,10 @@ function renderApplications(stage = "all") {
     const status = demo
       ? statusFor(row.dataset.application, row.dataset.status)
       : row.dataset.status;
-    const visible = status !== "new" && (stage === "all" || status === stage);
+    const visible = status !== "new" && (stage === "all" ? status !== "not_interested" : status === stage);
     row.hidden = !visible;
     row.querySelector(".stage-pill").textContent =
-      status[0].toUpperCase() + status.slice(1);
+      (status[0].toUpperCase() + status.slice(1)).replaceAll("_", " ");
     if (visible) count++;
   });
   const empty = document.querySelector("#application-empty");
@@ -119,7 +144,7 @@ document
   );
 if (demo)
   document
-    .querySelectorAll('form[method="post"]:not([data-status-form])')
+    .querySelectorAll('form[method="post"]:not([data-status-form]):not([data-dismiss])')
     .forEach((form) =>
       form.addEventListener("submit", (event) => {
         event.preventDefault();

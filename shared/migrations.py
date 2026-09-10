@@ -17,6 +17,8 @@ ADDITIONS = {
         "soft_key": "VARCHAR(64)",
         "alert_eligible": "BOOLEAN NOT NULL DEFAULT TRUE",
         "target_eligible": "BOOLEAN",
+        "search_roles": "TEXT",
+        "search_version": "INTEGER",
         "applied_at": "TIMESTAMP",
         "status_updated_at": "TIMESTAMP",
     },
@@ -25,6 +27,14 @@ ADDITIONS = {
 
 def migrate(conn):
     tables = set(inspect(conn).get_table_names())
+    if "application_tasks" in tables and conn.scalar(text(
+        "SELECT 1 FROM application_tasks WHERE state IN ('queued','running','submitting','needs_info','needs_review','needs_action') LIMIT 1"
+    )):
+        conn.execute(text(
+            "UPDATE application_tasks SET state=CASE WHEN submission_started_at IS NULL THEN 'cancelled' ELSE 'uncertain' END, "
+            "detail='Automatic applications removed. Check employer confirmation if submission had already started.' "
+            "WHERE state IN ('queued','running','submitting','needs_info','needs_review','needs_action')"
+        ))
     for table, additions in ADDITIONS.items():
         if table not in tables:
             continue
@@ -39,12 +49,13 @@ def migrate(conn):
             if "ix_postings_soft_key" not in indexes:
                 conn.execute(text("CREATE INDEX ix_postings_soft_key ON postings (soft_key)"))
             from shared.eligibility import eligible
+            from shared.role_search import role_tags
 
             while True:
                 rows = (
                     conn.execute(
                         text(
-                            "SELECT id,title,location,term,description FROM postings WHERE target_eligible IS NULL LIMIT 500"
+                            "SELECT id,title,location,term,description FROM postings WHERE target_eligible IS NULL OR search_version IS NULL OR search_version < 1 LIMIT 500"
                         )
                     )
                     .mappings()
@@ -52,15 +63,16 @@ def migrate(conn):
                 )
                 if not rows:
                     break
-                groups = {True: [], False: []}
+                groups = {}
                 for r in rows:
-                    groups[eligible(r["title"], r["location"], r["term"], r["description"])].append(r["id"])
+                    key = (eligible(r["title"], r["location"], r["term"], r["description"]), "|" + "|".join(role_tags(r["title"])) + "|")
+                    groups.setdefault(key, []).append(r["id"])
                 # Two set-based writes per batch, not one network round trip per
                 # historical posting on a remotely hosted PostgreSQL database.
-                for value, ids in groups.items():
+                for (value, roles), ids in groups.items():
                     if ids:
                         conn.execute(text(
-                            "UPDATE postings SET target_eligible=:value WHERE id IN :ids"
-                        ).bindparams(bindparam("ids", expanding=True)), {"value": value, "ids": ids})
+                            "UPDATE postings SET target_eligible=:value,search_roles=:roles,search_version=1 WHERE id IN :ids"
+                        ).bindparams(bindparam("ids", expanding=True)), {"value": value, "roles": roles, "ids": ids})
             if "ix_postings_target_eligible" not in indexes:
                 conn.execute(text("CREATE INDEX ix_postings_target_eligible ON postings (target_eligible)"))

@@ -1,24 +1,20 @@
-"""Application state machine. Nothing is Applied until there is confirmation."""
+"""Resume library and compatibility handling for historical application receipts."""
 import hashlib
 import json
 import re
-import secrets
-from datetime import timedelta
 from io import BytesIO
-from urllib.parse import urlsplit, urlunsplit
+from urllib.parse import urlsplit
 
 from pypdf import PdfReader
-from sqlalchemy import select, update
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy import select
 from shared.db import (ApplicationTask, ApplicantSettings, StoredResume, Posting,
-                       ApplicationWorker, utcnow)
+                       utcnow)
 
 PROFILE_FIELDS = {
     "first_name": "First name", "last_name": "Last name", "email": "Application email",
     "phone": "Phone (including country code)", "location": "City, state, country",
     "linkedin": "LinkedIn URL", "github": "GitHub URL", "website": "Portfolio URL",
 }
-ACTIVE_STATES = {"queued", "running", "needs_info", "needs_review", "needs_action", "submitting", "uncertain"}
 
 
 def json_data(value):
@@ -65,93 +61,6 @@ def store_resume(db, name, filename, content):
     return row
 
 
-def application_url(url):
-    """Only direct, public ATS application routes are eligible for automation."""
-    try:
-        p = urlsplit(url)
-        if p.scheme != "https" or p.username or p.password or p.port not in (None, 443):
-            return None
-        if p.hostname in ("jobs.lever.co", "jobs.eu.lever.co") and re.fullmatch(r"/[\w-]+/[a-fA-F0-9-]{32,36}(?:/apply)?/?", p.path):
-            return "lever", urlunsplit(("https", p.hostname, p.path.rstrip("/").removesuffix("/apply") + "/apply", "", ""))
-        if p.hostname in ("boards.greenhouse.io", "job-boards.greenhouse.io", "job-boards.eu.greenhouse.io") and re.fullmatch(r"/[\w-]+/jobs/\d+/?", p.path):
-            return "greenhouse", urlunsplit(("https", p.hostname, p.path, "", ""))
-    except ValueError:
-        pass
-    return None
-
-
-def queue_application(db, posting_id, resume_id):
-    p = db.scalar(select(Posting).where(Posting.id == posting_id).with_for_update())
-    if p is None:
-        raise ValueError("Role not found.")
-    target = application_url(p.url)
-    canonical = target[1] if target else p.url
-    key = hashlib.sha256(canonical.encode()).hexdigest()
-    old = db.scalar(select(ApplicationTask).where((ApplicationTask.posting_id == p.id) | (ApplicationTask.application_key == key)))
-    if old:
-        return old  # Repeated taps never create another employer submission.
-    if p.applied_at or p.status in ("applied", "interview", "offer", "rejected"):
-        raise ValueError("This role is already tracked as applied.")
-    if p.closed_at:
-        raise ValueError("This role is marked closed.")
-    settings = db.get(ApplicantSettings, 1)
-    resume = db.get(StoredResume, resume_id)
-    if not settings or not resume or not resume.active:
-        raise ValueError("Save your details and choose an available resume first.")
-    data = validate_profile(json_data(settings.data))
-    row = ApplicationTask(posting_id=p.id, resume_id=resume.id, applicant=json.dumps(data),
-                          target_url=p.url, application_key=key,
-                          review_before_submit=settings.review_before_submit)
-    if not application_url(p.url):
-        row.state = "needs_action"
-        row.detail = "This application site needs you to complete its form. Open the employer page, then confirm submission here."
-    try:
-        with db.begin_nested():
-            db.add(row)
-            db.flush()
-    except IntegrityError:
-        existing = db.scalar(select(ApplicationTask).where(ApplicationTask.application_key == key))
-        if existing is None:
-            raise
-        return existing
-    return row
-
-
-def claim_next(db):
-    now = utcnow()
-    worker = db.get(ApplicationWorker, 1)
-    if worker is None:
-        worker = ApplicationWorker(id=1)
-        db.add(worker)
-    worker.last_seen_at = now
-    stale = now - timedelta(minutes=15)
-    # A lost browser after the irreversible boundary is NEVER resubmitted.
-    db.execute(update(ApplicationTask).where(ApplicationTask.state == "submitting", ApplicationTask.claimed_at < stale).values(
-        state="uncertain", detail="The worker stopped after submission began. Check the employer site or confirmation email before marking Applied.", updated_at=now))
-    db.execute(update(ApplicationTask).where(ApplicationTask.state == "running", ApplicationTask.claimed_at < stale).values(
-        state="queued", claim_token=None, updated_at=now))
-    db.commit()
-    row = db.scalar(select(ApplicationTask).where(ApplicationTask.state == "queued").order_by(ApplicationTask.created_at).limit(1))
-    if row is None:
-        return None
-    token = secrets.token_hex(24)
-    changed = db.execute(update(ApplicationTask).where(ApplicationTask.id == row.id, ApplicationTask.state == "queued").values(
-        state="running", claimed_at=now, updated_at=now, claim_token=token, detail="Reading the employer application form."))
-    db.commit()
-    if changed.rowcount != 1:
-        return None
-    db.expire_all()
-    return db.get(ApplicationTask, row.id)
-
-
-def owned_transition(db, task_id, token, from_state="running", **values):
-    values["updated_at"] = utcnow()
-    result = db.execute(update(ApplicationTask).where(ApplicationTask.id == task_id,
-        ApplicationTask.claim_token == token, ApplicationTask.state == from_state).values(**values))
-    db.commit()
-    return result.rowcount == 1
-
-
 def mark_confirmed(db, task, evidence):
     p = db.scalar(select(Posting).where(Posting.id == task.posting_id).with_for_update())
     now = utcnow()
@@ -168,7 +77,3 @@ def mark_confirmed(db, task, evidence):
     db.flush()
     enqueue(db, p)
     update_workbook(db)
-
-
-def form_digest(questions):
-    return hashlib.sha256(json.dumps(questions, sort_keys=True).encode()).hexdigest()

@@ -47,6 +47,8 @@ from shared.db import (  # noqa: E402
     unpack_list,
 )
 from shared.sectors import sector_labels  # noqa: E402
+from shared.role_search import ROLE_LABELS, selected_roles  # noqa: E402
+from shared.eligibility import restriction_reasons  # noqa: E402
 from backend.auth import authenticated, register as register_auth  # noqa: E402
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -165,7 +167,9 @@ templates.env.globals["statuses"] = [
     "interview",
     "offer",
     "rejected",
+    "not_interested",
 ]
+templates.env.globals["role_labels"] = ROLE_LABELS
 templates.env.globals["brand"] = "Internship Radar"
 templates.env.filters["unpack"] = unpack_list
 
@@ -177,6 +181,14 @@ def build_posting_query(params):
         query = query.where(Posting.closed_at.is_(None))
     if params.get("status"):
         query = query.where(Posting.status == params.get("status"))
+    else:
+        query = query.where(Posting.status != "not_interested")
+
+    roles = selected_roles(params)
+    if any(role not in ROLE_LABELS for role in roles):
+        raise HTTPException(422, "Unknown role filter")
+    if params.getlist("role") or params.get("roles_filter") or params.getlist("sector"):
+        query = query.where(or_(*[Posting.search_roles.like(like_term(role)) for role in roles]) if roles else False)
 
     sectors = params.getlist("sector")
     if sectors:
@@ -304,6 +316,7 @@ def _feed_context(request: Request, db, page: int):
         "pages": pages,
         "sources": sources,
         "selected_sectors": params.getlist("sector"),
+        "selected_roles": selected_roles(params),
         "params": params,
         "query_string": str(request.url.query),
         "profile": profile,
@@ -477,12 +490,14 @@ def job_detail(request: Request, posting_id: int, profile: int | Literal[""] = 0
     )
     explanation = explain(db, selected, p) if selected else None
     return templates.TemplateResponse(
-        request, "job.html", {"p": p, "profile": selected, "explanation": explanation}
+        request, "job.html", {"p": p, "profile": selected, "explanation": explanation,
+                             "restriction_reasons": restriction_reasons(p.title, p.description)}
     )
 
 
 @app.post("/jobs/{posting_id}/status")
 def update_status(
+    request: Request,
     posting_id: int,
     background_tasks: BackgroundTasks,
     status: str = Form(...),
@@ -499,13 +514,17 @@ def update_status(
     # A manual applied/stage update must stop an in-flight preparation task.
     from shared.db import ApplicationTask
     task = db.scalar(select(ApplicationTask).where(ApplicationTask.posting_id == p.id).with_for_update())
-    if task and task.state == "submitting":
-        raise HTTPException(409, "Submission is in progress. Refresh its status before changing this role.")
+    if status == "not_interested" and p.applied_at:
+        raise HTTPException(409, "This role is already applied to. Update its application stage instead.")
     if task and status in ("applied", "interview", "offer", "rejected"):
         task.state = "submitted"
         task.submitted_at = task.submitted_at or utcnow()
         task.confirmation = "Owner recorded application progress manually."
         task.detail = "Tracked as applied by the owner."
+        task.updated_at = utcnow()
+    elif task and task.state != "submitted":
+        task.state = "cancelled"
+        task.detail = "Automatic applications have been removed."
         task.updated_at = utcnow()
     p.status = status
     p.status_updated_at = utcnow()
@@ -521,6 +540,8 @@ def update_status(
     enqueue(db, p)
     db.commit()
     background_tasks.add_task(sync_pending, db.get_bind())
+    if "application/json" in request.headers.get("accept", ""):
+        return JSONResponse({"id": p.id, "status": p.status})
     return RedirectResponse(f"/jobs/{posting_id}", 303)
 
 

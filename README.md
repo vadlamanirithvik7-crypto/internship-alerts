@@ -65,11 +65,13 @@ On a role's page, **Mark applied** records the first application time and marks 
 
 The live feed and alert worker require explicit evidence of a **United States work location**, an **internship or co-op**, and **summer 2027**. Unknown remote regions, unsupported seasons, and graduation-year-only references are excluded. This conservative scope may omit a relevant role until its source supplies enough evidence. Existing historical rows remain stored separately from the targeted discovery feed.
 
-## Selected application assistant
+## Manual applications and eligibility
 
-The private app now has a separate **Apply with my resume** flow: save your details, upload three original PDFs, choose a role and resume, answer missing employer questions, and follow its submission status. Supported native Lever/Greenhouse forms can be submitted by a free GitHub Actions browser worker. Custom controls, accounts, CAPTCHA and other ATS flows require a visible handoff. Confirmed applications leave discovery and enter the existing Google Sheets sync; uncertain results are never automatically resubmitted.
+Open a role and tap **Open employer application** to apply yourself. Radar never fills or submits the application. After submitting, use **Mark applied** to remove the role from discovery and update the live Google Sheet. Saved PDFs remain available for download. The former automatic submission worker and queue are removed; historical records remain stored.
 
-An optional owner-authorized Gmail read-only script tracks related receipts, interviews, rejections and next steps. Connecting the correct mailbox requires a new Google permission. See [setup, support boundaries and reliability details](docs/application-assistant.md). No paid service is required, and no real application is sent merely by deploying this code.
+The three role filters use actual job titles: software engineering, embedded/firmware, and electrical/hardware/chip design. Broad skill or employer-description mentions no longer make unrelated roles qualify. Listed citizenship/permanent-residency requirements and graduate-only roles are excluded from discovery and alerts; bachelor's/master's alternatives remain eligible. Missing or incomplete requirements cannot establish individual eligibility—check employer requirements and work authorization before applying. **Not interested** hides a card persistently and stops its alerts; restore it from Applications → Not interested by changing its stage to New.
+
+Optional owner-authorized Gmail tracking continues to show receipts, interviews, rejections and next steps after connection. See [manual application and email setup](docs/application-assistant.md).
 
 ## AI matching and evidence
 

@@ -349,12 +349,12 @@ def test_applied_postings_do_not_notify_again(db, monkeypatch):
 
 
 def test_target_only_ingestion_and_existing_description_enrichment(db):
-    assert ingest(db, [job(term="Summer 2026")], target_only=True) == []
+    assert ingest(db, [job(title="Software Engineering Intern", term="Summer 2026")], target_only=True) == []
     assert (
-        ingest(db, [job(term="Summer 2027", location="Remote")], target_only=True) == []
+        ingest(db, [job(title="Software Engineering Intern", term="Summer 2027", location="Remote")], target_only=True) == []
     )
-    row = ingest(db, [job(term="Summer 2027")], target_only=True)[0]
+    row = ingest(db, [job(title="Software Engineering Intern", term="Summer 2027")], target_only=True)[0]
     assert row.target_eligible
-    ingest(db, [job(description="Expanded Python and SQL evidence")], target_only=True)
+    ingest(db, [job(title="Software Engineering Intern", description="Expanded Python and SQL evidence")], target_only=True)
     db.refresh(row)
     assert row.target_eligible and "Expanded" in row.description

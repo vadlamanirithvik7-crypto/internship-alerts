@@ -60,7 +60,7 @@ def local_app(app):
             thread.join(timeout=5)
 
 
-def test_phone_discover_to_resume_queue_without_matching_profile(client):
+def test_phone_discover_opens_employer_without_matching_profile(client):
     c, _, Session = client
     prepare_perpay(client)
     pw = pytest.importorskip('playwright.sync_api')
@@ -69,23 +69,21 @@ def test_phone_discover_to_resume_queue_without_matching_profile(client):
         page = browser.new_page(viewport={'width': 390, 'height': 844},
                                 is_mobile=True, has_touch=True)
 
-        # The browser can only contact the isolated app; no employer requests.
-        page.route('**/*', lambda route: route.continue_()
-                   if urlsplit(route.request.url).netloc == urlsplit(origin).netloc
-                   else route.abort())
+        # Employer navigation is intercepted: never submit a real application.
+        def route_request(route):
+            if route.request.url.startswith(origin + '/'):
+                route.continue_()
+            else:
+                route.fulfill(status=200, content_type='text/html', body='<h1>Employer application fixture</h1>')
+        page.route('**/*', route_request)
         page.goto(origin)
         page.get_by_role('link', name='Software Engineering Internship, Summer 2027', exact=True).click()
-        page.get_by_role('link', name='Apply with my resume').click()
-        assert page.get_by_role('heading', name='Choose your resume').is_visible()
-        assert page.locator('input[name=resume_id]').is_checked()
-        page.get_by_role('button', name='Use this resume & apply').click()
-        page.wait_for_url('**/apply-tasks/*')
-        assert page.get_by_text('Queued', exact=True).is_visible()
+        page.get_by_role('link', name='Open employer application').click()
+        page.wait_for_url('https://job-boards.greenhouse.io/perpay/jobs/4076988007')
+        assert page.get_by_role('heading', name='Employer application fixture').is_visible()
         browser.close()
     with Session() as db:
-        task = db.scalar(select(ApplicationTask))
-        assert task and task.state == 'queued'
-        assert task.resume_id == db.scalar(select(StoredResume.id))
+        assert db.scalar(select(ApplicationTask)) is None
         assert db.get(Posting, 1).applied_at is None
 
 
