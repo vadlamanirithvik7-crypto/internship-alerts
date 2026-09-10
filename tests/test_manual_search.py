@@ -37,6 +37,7 @@ def test_stated_restrictions_are_excluded(description):
     'A bachelor degree is required. A master degree is preferred.',
     'Currently pursuing an undergraduate degree, graduating in 2028.',
     'U.S. citizenship is not required.',
+    'Must be eager to master new technologies and learn programming.',
     'We hire without regard to citizenship or permanent residency.',
     'Must be authorized to work in the United States. Sponsorship is not provided.',
     'Applicants pursuing a bachelor degree are eligible. Work alongside PhD researchers.',

@@ -63,7 +63,7 @@ def restriction_reasons(title, description=""):
     """Flag stated hard restrictions; preferences and bachelor's alternatives pass."""
     reasons = []
     title = _normalized(title)
-    graduate = r"\b(?:master'?s?|ms|msc|meng|mba|phd|doctoral|doctorate|postgraduate|graduate (?:students?|intern|research|degree|program))\b"
+    graduate = r"\b(?:master(?:'s|s)|master(?= (?:degree|of science|of engineering|program))|ms|msc|meng|mba|phd|doctoral|doctorate|postgraduate|graduate (?:students?|intern|research|degree|program))\b"
     bachelor = r"\b(?:bachelor'?s?|undergrad(?:uate)?s?|bs|bsc)\b"
     if (re.search(graduate, title) or re.search(r"\bgraduate\b", title)) and not re.search(bachelor, title):
         reasons.append("Graduate-degree role")
