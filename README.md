@@ -57,7 +57,7 @@ cp .env.example .env
 .venv/bin/uvicorn backend.main:app --env-file .env --host 0.0.0.0 --port 8000
 ```
 
-Without `ADMIN_PASSWORD`, live-data pages accept only localhost requests. With a password, HTTP Basic authentication protects the workspace (any username; configured password). Use HTTPS on deployment. The public demo always uses `demo.db`, even if `DATABASE_URL` is set. Resume upload accepts text-based PDF or UTF-8 text, up to 2 MB / ten PDF pages; scan-only PDFs require pasted text. Resumes and descriptions stay in your database. The local embedding model does not transmit them to an inference service.
+Without `ADMIN_PASSWORD`, live-data pages accept only localhost requests. With a password, browsers open a regular sign-in page using the configured Radar password. An HttpOnly, SameSite=Strict cookie keeps that browser signed in for seven days; changing ADMIN_PASSWORD invalidates existing sessions. HTTP Basic authentication remains supported for API clients (any username; configured password). Use HTTPS on deployment. The public demo always uses `demo.db`, even if `DATABASE_URL` is set. Resume upload accepts text-based PDF or UTF-8 text, up to 2 MB / ten PDF pages; scan-only PDFs require pasted text. Resumes and descriptions stay in your database. The local embedding model does not transmit them to an inference service.
 
 Profiles support preferences, location restrictions, term, exclusions, and remote-only filtering. Applications support interested, applied, interview, offer, and rejected stages, plus notes. Job closure is separate from application status. Priority companies are polled in addition to the rotating board slice.
 

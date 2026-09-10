@@ -4,13 +4,12 @@ Server-rendered with Jinja2 + HTMX so there is no JS build step - the whole app 
 plain Python plus templates, which keeps the free-tier deploy trivial.
 """
 
-import base64
-import hmac
 import json
 import os
 import sys
 from datetime import datetime, timedelta
 from typing import Literal
+from urllib.parse import urlencode
 
 from fastapi import (
     Depends,
@@ -48,6 +47,7 @@ from shared.db import (  # noqa: E402
     unpack_list,
 )
 from shared.sectors import sector_labels  # noqa: E402
+from backend.auth import authenticated, register as register_auth  # noqa: E402
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -69,7 +69,7 @@ async def access_control(request, call_next):
         request.scope["path"].removeprefix(request.scope.get("root_path", "")) or "/"
     )
     request.state.route_path = route_path
-    if route_path not in ("/healthz", "/integrations/mail") and not route_path.startswith("/static/"):
+    if route_path not in ("/healthz", "/integrations/mail", "/login") and not route_path.startswith("/static/"):
         if request.state.demo:
             if request.method not in ("GET", "HEAD"):
                 return JSONResponse(
@@ -78,18 +78,11 @@ async def access_control(request, call_next):
         else:
             password = os.environ.get("ADMIN_PASSWORD")
             if password:
-                try:
-                    scheme, value = request.headers.get("authorization", "").split(
-                        " ", 1
-                    )
-                    supplied = (
-                        base64.b64decode(value).decode().split(":", 1)[1]
-                        if scheme.lower() == "basic"
-                        else ""
-                    )
-                except (ValueError, IndexError, UnicodeError):
-                    supplied = ""
-                if not hmac.compare_digest(supplied, password):
+                if not authenticated(request, password):
+                    if request.method in ("GET", "HEAD") and "text/html" in request.headers.get("accept", ""):
+                        next_path = request.url.path + ("?" + request.url.query if request.url.query else "")
+                        return RedirectResponse("/login?" + urlencode({"next": next_path}), 303,
+                                                headers={"Cache-Control": "no-store"})
                     return Response(
                         status_code=401,
                         headers={"WWW-Authenticate": 'Basic realm="Internship Radar"'},
@@ -134,6 +127,7 @@ templates = Jinja2Templates(
         }
     ],
 )
+register_auth(app, templates)
 
 # Demo samples are isolated even when this process also serves a live database.
 from scripts.demo import seed

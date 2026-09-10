@@ -1,0 +1,14 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="theme-color" content="#102e30"><title>Sign in · Internship Radar</title><link rel="icon" href="/static/icon.svg"><link rel="stylesheet" href="/static/style.css"></head>
+<body><main style="max-width:480px;margin:8vh auto;padding:24px">
+<a class="brand" href="/login">◉ radar</a>
+<section class="panel" style="margin-top:24px"><span class="eyebrow">YOUR PRIVATE WORKSPACE</span><h1>Welcome back.</h1>
+{% if configured %}<p>Sign in to find internships, choose your resume, and track applications.</p>
+{% if error %}<p role="alert">{{error}}</p>{% endif %}
+<form action="/login" method="post" class="assistant-form">
+<input type="hidden" name="next" value="{{next_path}}"><input type="hidden" name="csrf" value="{{csrf}}">
+<label>Workspace password<input type="password" name="password" autocomplete="current-password" required autofocus></label>
+<button type="submit" class="full">Sign in</button>
+</form><p class="muted">Use the password you set for Radar. This is separate from your Google or GitHub password. You'll stay signed in for 7 days on this browser.</p>
+{% else %}<p>The workspace password hasn't been configured yet.</p>{% endif %}
+<a href="/demo/">View the recruiter demo →</a></section></main></body></html>
