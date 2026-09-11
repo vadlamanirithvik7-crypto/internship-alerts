@@ -75,12 +75,17 @@ def test_phone_discover_opens_employer_without_matching_profile(client):
                 route.continue_()
             else:
                 route.fulfill(status=200, content_type='text/html', body='<h1>Employer application fixture</h1>')
-        page.route('**/*', route_request)
+        page.context.route('**/*', route_request)
         page.goto(origin)
         page.get_by_role('link', name='Software Engineering Internship, Summer 2027', exact=True).click()
-        page.get_by_role('link', name='Open employer application').click()
-        page.wait_for_url('https://job-boards.greenhouse.io/perpay/jobs/4076988007')
-        assert page.get_by_role('heading', name='Employer application fixture').is_visible()
+        detail_url = page.url
+        with page.expect_popup() as opened:
+            page.get_by_role('link', name='Open employer application').click()
+        employer = opened.value
+        employer.wait_for_url('https://job-boards.greenhouse.io/perpay/jobs/4076988007')
+        assert employer.get_by_role('heading', name='Employer application fixture').is_visible()
+        assert page.url == detail_url
+        assert page.get_by_role('button', name='Mark applied').is_visible()
         browser.close()
     with Session() as db:
         assert db.scalar(select(ApplicationTask)) is None
