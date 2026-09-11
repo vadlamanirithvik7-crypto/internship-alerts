@@ -9,7 +9,7 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: poller
+  group: ${{ inputs.audit_only && 'application-link-audit' || 'poller' }}
   cancel-in-progress: false
 jobs:
   repair:
