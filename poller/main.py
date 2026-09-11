@@ -14,11 +14,10 @@ import logging
 import os
 import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import datetime
 import time
 from types import SimpleNamespace
 
-from sqlalchemy import func, select, case, or_
+from sqlalchemy import func, select, or_
 from datetime import timedelta
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -53,9 +52,28 @@ log = logging.getLogger("poller")
 
 DEFAULT_BOARD_SLICE = 250
 DEFAULT_RESOLVE_SLICE = 40
-MAX_WORKERS = 8
+MAX_WORKERS = 12
 # Companies polled between database commits, so a long sweep is crash-safe.
-BATCH_SIZE = 50
+BATCH_SIZE = 10
+
+
+def select_board_companies(session, limit):
+    """Reserve half of each sweep for oldest boards so new employers aren't starved."""
+    if limit <= 0:
+        return []
+    base = select(Company).where(Company.ats_type.in_(list(ats.FETCHERS)))
+    priority = list(session.scalars(base.where(Company.priority.is_(True))))
+    ordinary = base.where(Company.priority.is_(False))
+    oldest = (Company.last_checked_at.is_(None).desc(), Company.last_checked_at.asc(), Company.id)
+    active = select(Posting.company_id).where(Posting.target_eligible.is_(True), Posting.closed_at.is_(None))
+    hot = list(session.scalars(ordinary.where(
+        Company.id.in_(active),
+        or_(Company.last_checked_at.is_(None), Company.last_checked_at < utcnow() - timedelta(minutes=15)),
+    ).order_by(*oldest).limit(limit // 2)))
+    rotation = list(session.scalars(ordinary.where(
+        Company.id.not_in([c.id for c in hot])
+    ).order_by(*oldest).limit(limit - len(hot))))
+    return priority + hot + rotation
 
 
 def poll_boards(
@@ -70,47 +88,7 @@ def poll_boards(
     """
     if limit <= 0:
         return []
-    companies = (
-        session.execute(
-            select(Company)
-            .where(
-                Company.ats_type.in_(list(ats.FETCHERS)), Company.priority.is_(False)
-            )
-            .order_by(
-                case(
-                    (
-                        Company.id.in_(
-                            select(Posting.company_id).where(
-                                Posting.target_eligible.is_(True),
-                                Posting.closed_at.is_(None),
-                            )
-                        )
-                        & or_(
-                            Company.last_checked_at.is_(None),
-                            Company.last_checked_at < utcnow() - timedelta(minutes=15),
-                        ),
-                        0,
-                    ),
-                    else_=1,
-                ),
-                Company.last_checked_at.is_(None).desc(),
-                Company.last_checked_at.asc(),
-            )
-            .limit(limit)
-        )
-        .scalars()
-        .all()
-    )
-    companies = (
-        list(
-            session.scalars(
-                select(Company).where(
-                    Company.priority.is_(True), Company.ats_type.in_(list(ats.FETCHERS))
-                )
-            )
-        )
-        + companies
-    )
+    companies = select_board_companies(session, limit)
     if not companies:
         return []
 
@@ -246,165 +224,101 @@ def _run(
             for key, count in process_new_postings(session, target_only=True).items():
                 summary[key] = summary.get(key, 0) + count
 
-        # 1. Cross-company sources - trackers, HN, and Reddit list a direct apply
-        #    URL regardless of which ATS a company uses, so this is how we cover
-        #    the big employers (Google, Meta, ...) that aren't on the four ATS
-        #    APIs we poll directly. All cheap, and dedupe collapses the overlap.
-        feed_postings = []
-        feed_versions = {}
-        for name, harvester in [
-            ("simplify", simplify.fetch),
-            ("trackers", trackers.fetch),
-            ("hackernews", hackernews.fetch),
-            ("reddit", reddit.fetch),
-            ("amazon", bigtech.fetch_amazon),
-            ("microsoft", bigtech.fetch_microsoft),
-        ]:
-            if name in (
-                "hackernews",
-                "reddit",
-                "amazon",
-                "microsoft",
-            ) and not health.due(session, name, 6):
-                health.record(
-                    session,
-                    run_row.id,
-                    name,
-                    0,
-                    state="skipped",
-                    detail="Six-hour schedule",
-                    notify=False,
-                )
-                continue
-            if name == "reddit" and not (
-                os.environ.get("REDDIT_CLIENT_ID")
-                and os.environ.get("REDDIT_CLIENT_SECRET")
-            ):
-                health.record(
-                    session,
-                    run_row.id,
-                    name,
-                    0,
-                    state="skipped",
-                    detail="Credentials not configured",
-                    notify=False,
-                )
-                continue
-            net.reset_observation()
-            tick = time.monotonic()
-            try:
-                rows = harvester() or []
-                version = hashlib.sha256(
-                    json.dumps(rows, sort_keys=True, default=str).encode()
-                ).hexdigest()
-                cache_key = f"feed-version:{name}"
-                previous = session.get(AICache, cache_key)
-                unchanged = previous is not None and previous.payload == version
-                if not unchanged:
-                    feed_postings.extend(rows)
-                if not net.failed_requests():
-                    feed_versions[cache_key] = version
-                health.record(
-                    session,
-                    run_row.id,
-                    name,
-                    len(rows),
-                    state="error" if not rows and net.failed_requests() else "ok",
-                    detail=f"{net.failed_requests()} requests failed"
-                    if net.failed_requests()
-                    else (
-                        "Unchanged feed; no duplicate database transfer"
-                        if unchanged
-                        else ""
-                    ),
-                    elapsed=time.monotonic() - tick,
-                    notify=not skip_alerts,
-                )
-            except Exception:
-                log.exception("%s failed", name)
-                health.record(
-                    session,
-                    run_row.id,
-                    name,
-                    0,
-                    state="error",
-                    detail="Harvester failed; inspect runner logs",
-                    notify=not skip_alerts,
-                )
-            session.commit()
-
-        # 2. Broad keyword search - not bounded by the watchlist.
-        if not skip_search:
-            try:
-                rows = search.fetch_all()
-                feed_postings.extend(rows)
-                health.record(
-                    session, run_row.id, "search", len(rows), notify=not skip_alerts
-                )
-            except Exception:
-                health.record(
-                    session,
-                    run_row.id,
-                    "search",
-                    0,
-                    state="error",
-                    notify=not skip_alerts,
-                )
-
-        # 3. Learn companies from everything seen so far, then store it.
-        from shared.eligibility import eligible
-
         def relevant_company_rows(rows):
-            return [
-                p
-                for p in rows
-                if eligible(
-                    p.get("title"),
-                    p.get("location"),
-                    p.get("term"),
-                    p.get("description"),
-                )
-            ]
+            from shared.eligibility import confirmed_us, is_coop
+            from shared.role_search import role_tags
+            from shared.sectors import is_internship
+            # Learn employer boards even before they post their summer 2027 roles.
+            return [p for p in rows if confirmed_us(p.get("location")) and role_tags(p.get("title"))
+                    and is_internship(p.get("title", ""), "", p.get("term", ""))
+                    and not is_coop(p.get("title"), p.get("term"))]
 
-        upsert_companies(session, relevant_company_rows(feed_postings))
-        created.extend(
-            upsert_postings(
-                session, feed_postings, alert_eligible=not skip_alerts, target_only=True
-            )
-        )
-        # Commit versions with the postings, never before them: an interrupted
-        # ingest must retry the same feed on its next run.
-        for key, version in feed_versions.items():
-            session.merge(AICache(key=key, kind="feed-version", payload=version))
-        session.commit()
-        harvested_count += len(feed_postings)
-        if not skip_alerts:
-            deliver()
-
-        # 4. Poll company boards, persisting each batch as it completes so a
-        #    long sweep survives a crash or a runner timeout.
-        def persist(batch):
+        def persist(rows):
             nonlocal harvested_count
-            harvested_count += len(batch)
-            upsert_companies(session, relevant_company_rows(batch))
-            new_rows = upsert_postings(
-                session, batch, alert_eligible=not skip_alerts, target_only=True
-            )
+            harvested_count += len(rows)
+            upsert_companies(session, relevant_company_rows(rows))
+            new_rows = upsert_postings(session, rows, alert_eligible=not skip_alerts, target_only=True)
             session.commit()
             if new_rows and not skip_alerts:
                 deliver()
+                session.commit()
             return new_rows
 
-        created.extend(
-            poll_boards(
-                session,
-                board_slice,
-                on_batch=persist,
-                run_id=run_row.id,
-                notify=not skip_alerts,
-            )
-        )
-        session.commit()
+        def accept_feed(name, rows, failures, elapsed):
+            version = hashlib.sha256(json.dumps(rows, sort_keys=True, default=str).encode()).hexdigest()
+            key = f"feed-version:v3:{name}"
+            previous = session.get(AICache, key)
+            unchanged = previous is not None and previous.payload == version
+            if not unchanged:
+                created.extend(persist(rows))
+            if not failures:
+                session.merge(AICache(key=key, kind="feed-version", payload=version))
+            health.record(session, run_row.id, name, len(rows),
+                          state="error" if failures and not rows else "ok",
+                          detail=f"{failures} requests failed" if failures else ("Unchanged feed" if unchanged else ""),
+                          elapsed=elapsed, notify=not skip_alerts)
+            session.commit()
+
+        # Employer boards come first. Each small completed batch is visible and
+        # eligible for alerts while slower companies are still being fetched.
+        created.extend(poll_boards(session, board_slice, on_batch=persist,
+                                   run_id=run_row.id, notify=not skip_alerts))
+
+        # Network-only work runs concurrently; all ORM writes stay on this thread.
+        cache = session.get(AICache, "tracker-feeds")
+        try:
+            cached_feeds = json.loads(cache.payload) if cache else []
+        except (ValueError, TypeError):
+            cached_feeds = []
+        harvesters = [("simplify", simplify.fetch),
+                      ("trackers", lambda: trackers.fetch(discover=False, feeds=cached_feeds))]
+        for name, fetcher, hours in [
+            ("amazon", bigtech.fetch_amazon, 0.25),
+            ("microsoft", bigtech.fetch_microsoft, 0.25),
+            ("hackernews", hackernews.fetch, 6),
+            ("reddit", reddit.fetch, 6),
+            ("search", search.fetch_all, 1),
+        ]:
+            if name == "search" and skip_search:
+                continue
+            if name == "reddit" and not (os.environ.get("REDDIT_CLIENT_ID") and os.environ.get("REDDIT_CLIENT_SECRET")):
+                continue
+            if health.due(session, name, hours):
+                harvesters.append((name, fetcher))
+
+        def fetch_observed(fetcher):
+            net.reset_observation()
+            tick = time.monotonic()
+            rows = fetcher() or []
+            return rows, net.failed_requests(), time.monotonic() - tick
+
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            futures = {pool.submit(fetch_observed, fetcher): name for name, fetcher in harvesters}
+            for future in as_completed(futures):
+                name = futures[future]
+                try:
+                    accept_feed(name, *future.result())
+                except Exception:
+                    log.exception("%s failed", name)
+                    session.rollback()
+                    health.record(session, run_row.id, name, 0, state="error",
+                                  detail="Harvester failed; inspect runner logs", notify=not skip_alerts)
+                    session.commit()
+
+        # Repository search is maintenance, not part of every discovery pass.
+        # Retain previously found feeds and fetch them on subsequent scans.
+        if health.due(session, "tracker-discovery", 6):
+            tick = time.monotonic()
+            try:
+                feeds = trackers.discover_feeds(max_repos=10)
+                combined = {row[2]: row for row in cached_feeds}
+                combined.update({row[2]: row for row in feeds})
+                session.merge(AICache(key="tracker-feeds", kind="source-config", payload=json.dumps(list(combined.values())[-60:])))
+                health.record(session, run_row.id, "tracker-discovery", len(feeds), elapsed=time.monotonic()-tick, notify=False)
+                session.commit()
+            except Exception:
+                session.rollback()
+                log.exception("Tracker discovery failed; cached feeds retained")
 
         if not skip_alerts:
             deliver()

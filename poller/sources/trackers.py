@@ -22,6 +22,7 @@ import re
 
 from poller.net import get_json, get_text
 from poller.normalize import make_posting
+from poller.application_links import employer_url
 from poller.sources import simplify
 
 log = logging.getLogger(__name__)
@@ -123,10 +124,13 @@ def _parse_markdown_table(text: str, source: str):
             continue
 
         title_text, title_url = _cell_link(cells[cols["title"]])
-        apply_url = title_url
+        links = []
         if "apply" in cols and cols["apply"] < len(cells):
-            _, col_url = _cell_link(cells[cols["apply"]])
-            apply_url = col_url or apply_url
+            cell = cells[cols["apply"]]
+            links.extend(url for _, url in _MD_LINK.findall(cell))
+            links.extend(_HTML_HREF.findall(cell))
+        links.append(title_url)
+        apply_url = employer_url(links)
         if not title_text or not apply_url:
             continue
 
@@ -150,8 +154,8 @@ def _parse_markdown_table(text: str, source: str):
 GITHUB_SEARCH = "https://api.github.com/search/repositories"
 # Queries aimed at the naming conventions these trackers actually use.
 DISCOVERY_QUERIES = [
-    "internships in:name,description 2026",
-    "new grad positions in:name,description",
+    "internships in:name,description 2027",
+    "hardware firmware internships in:name,description 2027",
     "internship list in:name,description",
 ]
 # Cut the long tail of student portfolios/coursework named "*internship*".
@@ -224,7 +228,7 @@ def discover_feeds(max_repos=MAX_REPOS_PROBED):
 # --------------------------------------------------------------------------
 # Entry point
 # --------------------------------------------------------------------------
-def fetch(discover=True):
+def fetch(discover=False, feeds=()):
     """Ingest all curated markdown trackers plus any auto-discovered feeds."""
     postings = []
     seen_ids = set()
@@ -237,24 +241,25 @@ def fetch(discover=True):
         except Exception as exc:
             log.warning("trackers: %s failed: %s", source, exc)
 
+    feeds = list(feeds)
     if discover:
         try:
-            feeds = discover_feeds()
+            feeds.extend(discover_feeds())
         except Exception as exc:
             log.warning("trackers: discovery failed: %s", exc)
-            feeds = []
-        for kind, source, url in feeds:
-            try:
-                if kind == "json":
-                    data = get_json(url, timeout=45)
-                    kept = simplify.postings_from_listings(
-                        data, source="tracker-json", seen_ids=seen_ids
-                    )
-                else:
-                    kept = _parse_markdown_table(get_text(url, timeout=45), "tracker-md")
-                postings.extend(kept)
-                log.info("trackers: discovered %s (%s) -> %s postings", source, kind, len(kept))
-            except Exception as exc:
-                log.warning("trackers: discovered %s failed: %s", url, exc)
+            pass
+    for kind, source, url in feeds:
+        try:
+            if kind == "json":
+                data = get_json(url, timeout=45)
+                kept = simplify.postings_from_listings(
+                    data, source="tracker-json", seen_ids=seen_ids
+                )
+            else:
+                kept = _parse_markdown_table(get_text(url, timeout=45), "tracker-md")
+            postings.extend(kept)
+            log.info("trackers: discovered %s (%s) -> %s postings", source, kind, len(kept))
+        except Exception as exc:
+            log.warning("trackers: discovered %s failed: %s", url, exc)
 
     return postings

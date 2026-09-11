@@ -2,7 +2,7 @@
 
 import re
 from datetime import datetime, timezone
-from urllib.parse import urlparse
+from urllib.parse import urlparse, parse_qsl, urlencode
 
 REMOTE_PATTERN = re.compile(
     r"\b(remote|work from home|wfh|anywhere|distributed)\b", re.I
@@ -487,7 +487,8 @@ def canonical_url(url: str) -> str:
     """Reduce a job URL to a stable identity shared by every source that lists it.
 
     The same posting reaches us with different casing (`/Etched/` vs `/etched/`),
-    with or without an `/application` suffix, and with tracking params. Lowercasing
+    with or without an `/application` suffix, and with tracking params. Requisition
+    query parameters must remain distinct. Lowercasing
     is safe here because this value is only ever used as a dedupe key - the original
     URL is stored separately for display and linking.
     """
@@ -495,7 +496,12 @@ def canonical_url(url: str) -> str:
         return ""
     parsed = urlparse(url.strip())
     path = _URL_TAIL.sub("", parsed.path).rstrip("/")
-    return f"{parsed.netloc}{path}".lower()
+    # Company career pages often identify the requisition in the query string.
+    # Only discard tracking; dropping gh_jid/jobId merges unrelated openings.
+    tracking = {"source", "src", "ref", "referrer", "gh_src", "lever-source", "lever-origin", "trid", "iis", "iisn", "utm", "gclid", "fbclid"}
+    query = sorted((k.lower(), v) for k, v in parse_qsl(parsed.query, keep_blank_values=True)
+                   if not k.lower().startswith("utm_") and k.lower() not in tracking)
+    return f"{parsed.netloc}{path}".lower() + ("?" + urlencode(query) if query else "")
 
 
 def make_posting(

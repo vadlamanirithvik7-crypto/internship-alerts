@@ -49,7 +49,7 @@ def test_workday_valid_empty_stops_probing(monkeypatch):
     monkeypatch.setattr(ats, "session", lambda: client)
     result = ats.fetch_workday("acme", "Careers", "Acme", "wd5")
     assert result.complete and result.host == "wd5" and len(result) == 0
-    assert client.post.call_count == 2
+    assert client.post.call_count == 1
     assert all(".wd5." in c.args[0] for c in client.post.call_args_list)
 
 

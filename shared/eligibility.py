@@ -5,7 +5,7 @@ from poller.normalize import clean_location, US_STATE_NAMES, US_STATE_ABBREVS
 from shared.sectors import is_internship
 from shared.role_search import role_tags
 
-SEARCH_VERSION = 2
+SEARCH_VERSION = 3
 
 _COUNTRY = re.compile(
     r"\b(?:united states(?: of america)?|usa|u\.s\.a\.?|u\.s\.?|us)\b", re.I
@@ -41,11 +41,17 @@ def summer_2027(title, term="", description=""):
     return any(_SUMMER.search(value or "") for value in (term, title, description))
 
 
+def is_coop(title, term=""):
+    """Exclude roles explicitly labeled co-op, including internship/co-op hybrids."""
+    return bool(re.search(r"\b(?:co[\s\-‐‑–—]*ops?|cooperative (?:education|program))\b", f"{title or ''} {term or ''}", re.I))
+
+
 def eligible(title, location, term="", description=""):
     return bool(
         confirmed_us(location)
         and summer_2027(title, term, description)
         and is_internship(title or "", "", term or "")
+        and not is_coop(title, term)
         and role_tags(title)
         and not restriction_reasons(title, description)
     )

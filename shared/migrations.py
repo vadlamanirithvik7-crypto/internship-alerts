@@ -55,7 +55,7 @@ def migrate(conn):
                 rows = (
                     conn.execute(
                         text(
-                            f"SELECT id,title,location,term,description FROM postings WHERE target_eligible IS NULL OR search_version IS NULL OR search_version < {SEARCH_VERSION} LIMIT 500"
+                            f"SELECT id,title,location,term,description,url,raw_hash FROM postings WHERE target_eligible IS NULL OR search_version IS NULL OR search_version < {SEARCH_VERSION} LIMIT 500"
                         )
                     )
                     .mappings()
@@ -63,6 +63,15 @@ def migrate(conn):
                 )
                 if not rows:
                     break
+                from poller.normalize import canonical_url
+                from shared.db import raw_hash
+                for r in rows:
+                    canonical = canonical_url(r["url"])
+                    if "?" not in canonical:
+                        continue
+                    identity = raw_hash(canonical)
+                    if identity != r["raw_hash"] and not conn.scalar(text("SELECT id FROM postings WHERE raw_hash=:hash"), {"hash": identity}):
+                        conn.execute(text("UPDATE postings SET raw_hash=:hash WHERE id=:id"), {"hash": identity, "id": r["id"]})
                 groups = {}
                 for r in rows:
                     key = (eligible(r["title"], r["location"], r["term"], r["description"]), "|" + "|".join(role_tags(r["title"])) + "|")

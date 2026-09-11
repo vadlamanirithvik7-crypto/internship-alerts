@@ -44,7 +44,6 @@ SECTOR_QUERIES = [
     "autonomous systems intern",
     "mechatronics intern",
     "hardware engineering intern",
-    "engineering co-op",
 ]
 
 
@@ -147,7 +146,7 @@ def fetch_remoteok():
                 external_id=job.get("id"),
                 company_name=job.get("company") or "",
                 title=job.get("position") or "",
-                url=job.get("url") or job.get("apply_url") or "",
+                url=job.get("apply_url") or job.get("url") or "",
                 location=job.get("location") or "Remote",
                 description=" ".join(str(t) for t in tags),
                 source="remoteok",
