@@ -271,7 +271,7 @@ if __name__ == "__main__":
         with get_session_factory(engine)() as db:
             rows = [{"company_name": p.company_name, "title": p.title, "url": p.url, "location": p.location}
                     for p in db.scalars(select(Posting).where(Posting.target_eligible.is_(True)))
-                    if is_aggregator(p.url) and not application_url(p)]
+                    if is_aggregator(p.url) and not application_url(p) and not direct_url(p.employer_site_url)]
         Path("link-candidates.json").write_text(json.dumps(rows))
         print({"public_listings_to_resolve": len(rows)})
         raise SystemExit(0)

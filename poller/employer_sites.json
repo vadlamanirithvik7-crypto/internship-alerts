@@ -4,6 +4,11 @@
     "source": "https://jobright.ai/jobs/info/6aa07f18500b01124c7797e9",
     "url": "https://global.abb/group/en"
   },
+  "activision blizzard": {
+    "name": "Activision Blizzard",
+    "source": "https://careers.activisionblizzard.com/home",
+    "url": "https://careers.activisionblizzard.com/home"
+  },
   "american express": {
     "name": "American Express",
     "source": "https://jobright.ai/jobs/info/6a8390f9b5a0ac0e84a26d7f",
@@ -19,6 +24,11 @@
     "source": "https://jobright.ai/jobs/info/6a970d90e4e60e4b8da5bcb8",
     "url": "https://www.atlassian.com"
   },
+  "av": {
+    "name": "AV",
+    "source": "https://www.avinc.com/careers/internships/",
+    "url": "https://www.avinc.com/careers/internships/"
+  },
   "bae systems": {
     "name": "BAE Systems",
     "source": "https://jobright.ai/jobs/info/6a987d8411f73b6462c8eeaa",
@@ -28,6 +38,11 @@
     "name": "Bain & Company",
     "source": "https://jobright.ai/jobs/info/6a9b853d90a313642c65a438",
     "url": "https://bain.com"
+  },
+  "bechtel plant machinery inc bpmi": {
+    "name": "Bechtel Plant Machinery, Inc. (BPMI)",
+    "source": "https://www.bpmionline.com/",
+    "url": "https://www.bpmionline.com/"
   },
   "belvedere trading": {
     "name": "Belvedere Trading, LLC",
@@ -73,6 +88,11 @@
     "name": "CHAOS Industries",
     "source": "https://jobright.ai/jobs/info/6aa06ed7dbc0e60e37e0d9b1",
     "url": "https://chaosinc.com"
+  },
+  "citizens financial group": {
+    "name": "Citizens Financial Group",
+    "source": "https://jobs.citizensbank.com/",
+    "url": "https://jobs.citizensbank.com/"
   },
   "collier aerospace": {
     "name": "Collier Aerospace",
@@ -174,6 +194,11 @@
     "source": "https://jobright.ai/jobs/info/6a95ac6ec8763a3a87ffb3ee",
     "url": "https://www.google.com"
   },
+  "heartland business systems": {
+    "name": "Heartland Business Systems",
+    "source": "https://www.hbs.net/careers",
+    "url": "https://www.hbs.net/careers"
+  },
   "henkel": {
     "name": "Henkel",
     "source": "https://jobright.ai/jobs/info/6aa0a53e5b2d5633ef3bfc1e",
@@ -188,6 +213,11 @@
     "name": "Honeywell Aerospace",
     "source": "https://jobright.ai/jobs/info/6a91e264d18f75674827a994",
     "url": "https://www.honeywellaerospace.com/"
+  },
+  "honeywell technologies": {
+    "name": "Honeywell Technologies",
+    "source": "https://www.honeywell.com/us/en/careers/your-career-journey/early-career",
+    "url": "https://www.honeywell.com/us/en/careers/your-career-journey/early-career"
   },
   "hp iq": {
     "name": "HP IQ",
@@ -204,6 +234,11 @@
     "source": "https://jobright.ai/jobs/info/6a95f5d99fcec544237307d5",
     "url": "https://www.hudsonrivertrading.com"
   },
+  "icd": {
+    "name": "ICD",
+    "source": "https://icdportal.com/about/careers/",
+    "url": "https://icdportal.com/about/careers/"
+  },
   "icd portal": {
     "name": "ICD Portal",
     "source": "https://jobright.ai/jobs/info/6aa1fc46ef23570cae247272",
@@ -214,15 +249,35 @@
     "source": "https://jobright.ai/jobs/info/6a9e793f7cdb8543b877bd62",
     "url": "https://www.icf.com"
   },
+  "intuit": {
+    "name": "Intuit",
+    "source": "https://www.intuit.com/careers/",
+    "url": "https://www.intuit.com/careers/"
+  },
+  "j b hunt transport services": {
+    "name": "J.B. Hunt Transport Services, Inc.",
+    "source": "https://careers.jbhunt.com/",
+    "url": "https://careers.jbhunt.com/"
+  },
   "jacobs": {
     "name": "Jacobs",
     "source": "https://jobright.ai/jobs/info/6a9f3cfd68f82b403673c7da",
     "url": "http://www.jacobs.com"
   },
+  "john hancock": {
+    "name": "John Hancock",
+    "source": "https://careers.manulife.com/global/en",
+    "url": "https://careers.manulife.com/global/en"
+  },
   "jpmorganchase": {
     "name": "JPMorganChase",
     "source": "https://jobright.ai/jobs/info/6a70ac201003bd7b70d6bdc6",
     "url": "https://www.jpmorganchase.com"
+  },
+  "kb signaling": {
+    "name": "KB Signaling",
+    "source": "https://www.kb-signaling.com/en/",
+    "url": "https://careers.knorr-bremse.com/KBSignaling/?locale=en_US"
   },
   "kensho technologies": {
     "name": "Kensho Technologies",
@@ -349,6 +404,11 @@
     "source": "https://jobright.ai/jobs/info/6a9e4e7049f4604c7894e815",
     "url": "https://www.nxp.com"
   },
+  "olin": {
+    "name": "Olin",
+    "source": "https://olin.com/careers/",
+    "url": "https://olin.com/careers/"
+  },
   "optiver": {
     "name": "Optiver",
     "source": "https://jobright.ai/jobs/info/6a5f6adeb0f20036bc630d32",
@@ -393,6 +453,11 @@
     "name": "Plexus Corp.",
     "source": "https://jobright.ai/jobs/info/6a9740a9455eaf6a08c1bc33",
     "url": "http://www.plexus.com/"
+  },
+  "principal financial group": {
+    "name": "Principal Financial Group",
+    "source": "https://www.principal.com/about-us/careers",
+    "url": "https://www.principal.com/about-us/careers"
   },
   "progress rail a caterpillar company": {
     "name": "Progress Rail, A Caterpillar Company",
@@ -464,6 +529,11 @@
     "source": "https://jobright.ai/jobs/info/6a96347a3843db015990a086",
     "url": "http://www.shield.ai"
   },
+  "siemens digital industries software": {
+    "name": "Siemens Digital Industries Software",
+    "source": "https://jobs.sw.siemens.com/",
+    "url": "https://jobs.sw.siemens.com/"
+  },
   "southern california edison sce": {
     "name": "Southern California Edison (SCE)",
     "source": "https://jobright.ai/jobs/info/6a96abebf5337b2cf731d9e9",
@@ -499,6 +569,11 @@
     "source": "https://jobright.ai/jobs/info/6a952b65360363009919a96b",
     "url": "http://www.stryker.com/en-us/index.htm"
   },
+  "stryten energy": {
+    "name": "Stryten Energy",
+    "source": "https://www.stryten.com/about-us/careers/",
+    "url": "https://www.stryten.com/about-us/careers/"
+  },
   "susquehanna international group": {
     "name": "Susquehanna International Group",
     "source": "https://jobright.ai/jobs/info/6a99892190a313642c650ca6",
@@ -518,6 +593,11 @@
     "name": "Teledyne Technologies Incorporated",
     "source": "https://jobright.ai/jobs/info/6a96f0f3d13b4819f39ddd86",
     "url": "http://www.teledyne.com"
+  },
+  "tesla": {
+    "name": "Tesla",
+    "source": "https://www.tesla.com/careers/internships",
+    "url": "https://www.tesla.com/careers/internships"
   },
   "textron": {
     "name": "Textron",
@@ -554,6 +634,11 @@
     "source": "https://jobright.ai/jobs/info/6a987bf383fc633357631c51",
     "url": "https://toyota-automated-logistics.com"
   },
+  "tradeweb": {
+    "name": "Tradeweb",
+    "source": "https://www.tradeweb.com/who-we-are/tradeweb-summer-internship-program/",
+    "url": "https://www.tradeweb.com/careers"
+  },
   "united launch alliance ula": {
     "name": "United Launch Alliance (ULA)",
     "source": "https://jobright.ai/jobs/info/6aa02940a2266b538d22e777",
@@ -568,6 +653,11 @@
     "name": "Vermeer Corporation",
     "source": "https://jobright.ai/jobs/info/6a9666e969b865490a631cf7",
     "url": "https://borestore.com/"
+  },
+  "vertiv": {
+    "name": "Vertiv",
+    "source": "https://www.vertiv.com/en-us/about/career-center/",
+    "url": "https://www.vertiv.com/en-us/about/career-center/"
   },
   "waymo": {
     "name": "Waymo",
@@ -588,6 +678,11 @@
     "name": "Workiva",
     "source": "https://jobright.ai/jobs/info/6a9086042e254e06fb9f162c",
     "url": "http://www.workiva.com"
+  },
+  "wsp": {
+    "name": "WSP",
+    "source": "https://www.wsp.com/en-us/careers/job-opportunities?country=US",
+    "url": "https://www.wsp.com/en-us/careers/job-opportunities?country=US"
   },
   "wsp in the u s": {
     "name": "WSP in the U.S.",
