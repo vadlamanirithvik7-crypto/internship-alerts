@@ -1,5 +1,7 @@
 """Persist the application workbook in the same transaction as progress changes."""
 
+from poller.application_links import notification_url
+
 import base64
 from io import BytesIO
 from sqlalchemy import select, or_
@@ -50,7 +52,7 @@ def update_workbook(db):
             p.status_updated_at.isoformat(sep=" ", timespec="seconds")
             if p.status_updated_at
             else "",
-            p.url,
+            notification_url(p),
             p.notes or "",
         ]
         sheet.append(values)

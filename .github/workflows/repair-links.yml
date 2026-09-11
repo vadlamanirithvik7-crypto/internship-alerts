@@ -1,0 +1,22 @@
+name: Repair employer application links
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: poller
+  cancel-in-progress: false
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - run: pip install -r requirements.txt
+      - run: python -m poller.application_links --limit 3000 --scan-boards
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}

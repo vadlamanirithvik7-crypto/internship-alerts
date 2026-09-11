@@ -9,6 +9,7 @@ from email.message import EmailMessage
 import requests
 
 from poller.net import USER_AGENT
+from poller.application_links import notification_url
 
 log = logging.getLogger(__name__)
 
@@ -55,7 +56,7 @@ def send_email(postings, *, subject=None, groups=None) -> bool:
         location = posting.location or "Location not specified"
         text_lines.append(
             f"{posting.company_name} - {posting.title}\n"
-            f"  {location} | {sectors}\n  {posting.url}\n"
+            f"  {location} | {sectors}\n  {notification_url(posting)}\n"
         )
         html_rows.append(
             f'<tr style="border-bottom:1px solid #eee">'
@@ -63,7 +64,7 @@ def send_email(postings, *, subject=None, groups=None) -> bool:
             f'<div style="font-weight:600;font-size:15px">{escape(posting.title)}</div>'
             f'<div style="color:#444;margin:2px 0">{escape(posting.company_name)}</div>'
             f'<div style="color:#777;font-size:13px">{escape(location)} &middot; {escape(sectors)}</div>'
-            f'<a href="{escape(posting.url)}" style="color:#0b57d0;font-size:13px">View posting &rarr;</a>'
+            f'<a href="{escape(notification_url(posting))}" style="color:#0b57d0;font-size:13px">View posting &rarr;</a>'
             f"</td></tr>"
         )
 
@@ -124,7 +125,7 @@ def send_ntfy_deliveries(postings):
             {
                 "title": p.title[:200],
                 "message": f"{p.company_name} - {p.location or 'Location N/A'}",
-                "click": p.url,
+                "click": notification_url(p),
                 "tags": ["briefcase"],
             }
         ):
@@ -132,7 +133,7 @@ def send_ntfy_deliveries(postings):
     if len(postings) > 20:
         # Include actual job links so acknowledgement means the jobs were delivered.
         rest = postings[20:40]
-        message = "\n".join(f"{p.company_name}: {p.title}\n{p.url}" for p in rest)
+        message = "\n".join(f"{p.company_name}: {p.title}\n{notification_url(p)}" for p in rest)
         if len(message.encode("utf-8")) <= 3500 and publish_ntfy(
             {"title": "More internship matches", "message": message}
         ):
@@ -151,7 +152,7 @@ def send_ntfy(postings):
                 {
                     "title": p.title[:200],
                     "message": f"{p.company_name} - {p.location or 'Location N/A'}",
-                    "click": p.url,
+                    "click": notification_url(p),
                 }
             )
             for p in postings[:20]

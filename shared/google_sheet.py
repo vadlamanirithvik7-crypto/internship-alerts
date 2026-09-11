@@ -1,5 +1,7 @@
 """Durable one-way application sync to an owner-controlled Apps Script webhook."""
 
+from poller.application_links import notification_url
+
 import json
 import os
 import re
@@ -25,7 +27,7 @@ def enqueue(db, p):
     row = [
         str(p.id), p.company_name, p.title, p.location or "", p.term or "", p.status,
         p.applied_at.isoformat() + "Z" if p.applied_at else "", version,
-        p.url, p.notes or "", version,
+        notification_url(p), p.notes or "", version,
     ]
     item = db.get(ApplicationSync, p.id)
     if item is None:

@@ -8,6 +8,9 @@ ADDITIONS = {
         "priority": "BOOLEAN NOT NULL DEFAULT FALSE",
     },
     "postings": {
+        "application_url": "TEXT",
+        "employer_site_url": "TEXT",
+        "application_link_checked_at": "TIMESTAMP",
         "description": "TEXT",
         "last_seen_at": "TIMESTAMP",
         "closed_at": "TIMESTAMP",

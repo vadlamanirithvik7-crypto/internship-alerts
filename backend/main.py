@@ -169,7 +169,7 @@ templates.env.globals["statuses"] = [
     "rejected",
     "not_interested",
 ]
-from poller.application_links import is_aggregator
+from poller.application_links import is_aggregator, application_url, employer_search_url, direct_url, repair_links
 templates.env.globals["is_aggregator"] = is_aggregator
 templates.env.globals["role_labels"] = ROLE_LABELS
 templates.env.globals["brand"] = "Internship Radar"
@@ -485,6 +485,9 @@ def job_detail(request: Request, posting_id: int, profile: int | Literal[""] = 0
     p = db.get(Posting, posting_id)
     if not p:
         raise HTTPException(404)
+    if not request.state.demo and is_aggregator(p.url):
+        repair_links(db, posting_id=p.id, limit=1)
+        db.commit()
     selected = (
         db.get(ResumeProfile, profile)
         if profile
@@ -493,7 +496,10 @@ def job_detail(request: Request, posting_id: int, profile: int | Literal[""] = 0
     explanation = explain(db, selected, p) if selected else None
     return templates.TemplateResponse(
         request, "job.html", {"p": p, "profile": selected, "explanation": explanation,
-                             "restriction_reasons": restriction_reasons(p.title, p.description)}
+                             "restriction_reasons": restriction_reasons(p.title, p.description),
+                             "application_url": application_url(p),
+                             "employer_site_url": direct_url(p.employer_site_url),
+                             "employer_search_url": employer_search_url(p)}
     )
 
 
