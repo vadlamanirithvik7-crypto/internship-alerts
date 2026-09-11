@@ -6,11 +6,14 @@ than aggregators pick it up.
 """
 
 import logging
+import re
 
 import requests
 
 from poller.net import USER_AGENT, get_json, session
-from poller.normalize import make_posting
+from poller.normalize import make_posting, is_us_location
+from shared.role_search import role_tags
+from shared.sectors import is_internship
 
 log = logging.getLogger(__name__)
 
@@ -22,7 +25,7 @@ class BoardResult(list):
         self.host = host
 
 
-INTERN_SEARCH_TERMS = ["intern", "co-op"]
+INTERN_SEARCH_TERMS = ["intern"]
 
 # Deep enough for the largest employers without paging a whole career site.
 WORKDAY_MAX_RESULTS = 1000
@@ -171,22 +174,28 @@ def fetch_workday(tenant: str, site: str, company_name: str = None, wd_num: str 
                         continue
                     seen_paths.add(path)
                     body = ""
-                    from shared.eligibility import eligible
+                    from shared.eligibility import is_coop
+                    location = job.get("locationsText") or ""
+                    title = job.get("title") or ""
                     # Listing payloads omit qualifications. Fetch the official
                     # detail for likely matches; missing bodies remain reviewable.
                     if (detail_attempts < 20 and path.startswith("/job/")
-                            and eligible(job.get("title"), job.get("locationsText"))):
+                            and role_tags(title) and is_internship(title) and not is_coop(title)
+                            and is_us_location(location)
+                            and not re.search(r"\b202[0-689]\b", title)):
                         detail_attempts += 1
                         detail = get_json(f"{base}/wday/cxs/{tenant}/{site}{path}", timeout=12, retries=0) or {}
                         info = detail.get("jobPostingInfo") or {}
                         body = info.get("jobDescription") or ""
+                        locations = [info.get("location") or location] + (info.get("additionalLocations") or [])
+                        location = "; ".join(str(value) for value in locations if value)
                     postings.append(
                         make_posting(
                             external_id=(job.get("bulletFields") or [None])[0],
                             company_name=company_name or tenant,
                             title=job.get("title") or "",
                             url=f"{base}/en-US/{site}{path}",
-                            location=job.get("locationsText") or "",
+                            location=location,
                             source="workday",
                             description=body,
                         )

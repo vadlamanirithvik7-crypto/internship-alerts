@@ -43,7 +43,7 @@ def soft_key(posting):
 
 
 def clean_description(value):
-    return unescape(re.sub(r"<[^>]+>", " ", value or "")).strip()[:30000]
+    return re.sub(r"<[^>]+>", " ", unescape(unescape(value or ""))).strip()[:30000]
 
 
 def upsert_companies(session, postings):

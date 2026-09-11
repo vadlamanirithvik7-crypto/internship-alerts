@@ -42,7 +42,7 @@ def test_ambiguous_or_foreign_location_is_not_us(location):
     "title,term,description,wanted",
     [
         ("Software Engineering Intern", "Summer 2027", "", True),
-        ("Summer 2027 Hardware Co-op", "", "", True),
+        ("Summer 2027 Hardware Co-op", "", "", False),
         ("Software Engineering Intern - 2027 Summer", "", "", True),
         (
             "Software Engineering Intern",

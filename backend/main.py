@@ -169,6 +169,8 @@ templates.env.globals["statuses"] = [
     "rejected",
     "not_interested",
 ]
+from poller.application_links import is_aggregator
+templates.env.globals["is_aggregator"] = is_aggregator
 templates.env.globals["role_labels"] = ROLE_LABELS
 templates.env.globals["brand"] = "Internship Radar"
 templates.env.filters["unpack"] = unpack_list

@@ -10,6 +10,7 @@ import logging
 
 from poller.net import get_json
 from poller.normalize import make_posting
+from poller.application_links import employer_url
 
 log = logging.getLogger(__name__)
 
@@ -63,7 +64,7 @@ def postings_from_listings(data, *, source=SOURCE, seen_ids=None):
         if row.get("active", True) and not _wanted_term(row.get("terms")):
             continue
 
-        url = row.get("url") or ""
+        url = employer_url([row.get("application_url"), row.get("url")])
         listing_id = row.get("id") or url
         if not url or listing_id in seen_ids:
             continue
