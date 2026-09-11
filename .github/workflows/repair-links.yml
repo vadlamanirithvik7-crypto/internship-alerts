@@ -1,10 +1,15 @@
 name: Repair employer application links
 on:
   workflow_dispatch:
+    inputs:
+      audit_only:
+        description: Export only public listing metadata for link verification
+        type: boolean
+        default: false
 permissions:
   contents: read
 concurrency:
-  group: poller
+  group: ${{ inputs.audit_only && 'application-link-audit' || 'poller' }}
   cancel-in-progress: false
 jobs:
   repair:
@@ -17,6 +22,12 @@ jobs:
           python-version: '3.12'
           cache: pip
       - run: pip install -r requirements.txt
-      - run: python -m poller.application_links --limit 3000 --scan-boards
+      - run: python -m poller.application_links ${{ inputs.audit_only && '--audit' || '--limit 3000 --scan-boards' }}
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      - uses: actions/upload-artifact@v4
+        if: inputs.audit_only
+        with:
+          name: public-link-candidates
+          path: link-candidates.json
+          retention-days: 1

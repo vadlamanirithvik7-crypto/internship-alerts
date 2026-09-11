@@ -14,7 +14,7 @@ def job(**values):
 
 
 def test_direct_destinations_do_not_allow_aggregators_or_unsafe_links():
-    for url in ['https://jobright.ai/jobs/1', 'https://www.jobright.ai/jobs/1', 'https://linkedin.com/jobs/1',
+    for url in ['https://jobright.ai/jobs/1', 'https://zapply.jobs/l/d/greenhouse-acme-1', 'https://www.jobright.ai/jobs/1', 'https://linkedin.com/jobs/1',
                 'javascript:alert(1)', 'https://localhost/x', 'http://127.0.0.1/x', 'https://user:pw@company.com/job',
                 'https://company.internal/job', 'https://[invalid']:
         assert links.direct_url(url) == ''
@@ -108,3 +108,34 @@ def test_workday_fallback_retains_correct_tenant_host_site():
     assert links.company_careers_url(company, 'Software Intern').startswith('https://acme.wd5.myworkdayjobs.com/Careers?q=')
     company.resolved = False
     assert links.company_careers_url(company) == ''
+
+
+def test_single_employer_requisition_can_cover_multiple_locations():
+    p = job()
+    direct = job(url="https://careers.acme.com/jobs/123", location="Austin, TX; Boston, MA")
+    assert links.match_employer(p, [direct]) == direct.url
+    assert not links.match_employer(job(location="Austin"), [direct])
+
+
+def test_known_company_fallback_never_claims_an_exact_role(monkeypatch):
+    assert links.known_employer_site("Lyft").startswith("https://")
+    assert links.known_employer_site("No such company") == ""
+
+
+def test_aggregator_wrappers_do_not_make_an_employer_match_ambiguous():
+    p = job()
+    direct = job(url="https://careers.acme.com/jobs/123")
+    wrapper = job(url="https://zapply.jobs/l/d/greenhouse-acme-123")
+    assert links.match_employer(p, [wrapper, direct]) == direct.url
+
+
+def test_older_public_share_uses_structured_html_fallback(monkeypatch):
+    import json
+    p = job()
+    data = {'props': {'pageProps': {'dataSource': {
+        'jobResult': {'jobId': 'a'*24, 'jobTitle': p.title},
+        'companyResult': {'companyName': 'Acme', 'companyURL': 'https://acme.com'},
+    }}}}
+    monkeypatch.setattr('poller.net.get_json', lambda *a, **k: None)
+    monkeypatch.setattr('poller.net.get_text', lambda *a, **k: '<script id="__NEXT_DATA__" type="application/json">'+json.dumps(data)+'</script>')
+    assert links.jobright_destinations(p.url, p.company_name, p.title) == {'application_url':'', 'employer_site_url':'https://acme.com'}
