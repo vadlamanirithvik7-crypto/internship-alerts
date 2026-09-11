@@ -94,11 +94,13 @@ def register(app, templates, get_db):
         posting = db.get(Posting, posting_id)
         if not posting:
             raise HTTPException(404)
-        from urllib.parse import urlsplit
-        target = urlsplit(posting.url)
-        if target.scheme not in ("http", "https") or not target.netloc or target.username or target.password:
-            raise HTTPException(422, "This employer link is unavailable")
-        return RedirectResponse(posting.url, 303)
+        from poller.application_links import application_url, repair_links
+        if not application_url(posting):
+            repair_links(db, posting_id=posting_id, limit=1)
+            db.commit()
+        destination = application_url(posting)
+        # Legacy bookmarks must never send applicants through an aggregator.
+        return RedirectResponse(destination or f"/jobs/{posting_id}", 303)
 
     @app.post("/jobs/{posting_id}/apply")
     @app.post("/apply-tasks/{rest:path}")

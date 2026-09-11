@@ -305,6 +305,10 @@ def _run(
                                   detail="Harvester failed; inspect runner logs", notify=not skip_alerts)
                     session.commit()
 
+        from poller.application_links import repair_links
+        log.info("application links: %s", repair_links(session))
+        session.commit()
+
         # Repository search is maintenance, not part of every discovery pass.
         # Retain previously found feeds and fetch them on subsequent scans.
         if health.due(session, "tracker-discovery", 6):
