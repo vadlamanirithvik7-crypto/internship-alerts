@@ -215,8 +215,21 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--limit", type=int, default=2000)
     parser.add_argument("--scan-boards", action="store_true")
+    parser.add_argument("--audit", action="store_true")
     args = parser.parse_args()
     engine = init_db(get_engine())
+    if args.audit:
+        import json
+        from pathlib import Path
+        from sqlalchemy import select
+        from shared.db import Posting
+        with get_session_factory(engine)() as db:
+            rows = [{"company_name": p.company_name, "title": p.title, "url": p.url, "location": p.location}
+                    for p in db.scalars(select(Posting).where(Posting.target_eligible.is_(True)))
+                    if is_aggregator(p.url) and not application_url(p)]
+        Path("link-candidates.json").write_text(json.dumps(rows))
+        print({"public_listings_to_resolve": len(rows)})
+        raise SystemExit(0)
     with poller_lock(engine), get_session_factory(engine)() as db:
         if args.scan_boards:
             from concurrent.futures import ThreadPoolExecutor, as_completed
