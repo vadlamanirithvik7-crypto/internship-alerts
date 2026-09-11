@@ -1,7 +1,8 @@
 """Distinguish original employer applications from aggregator listings."""
 from urllib.parse import urlsplit
+from functools import lru_cache
 
-AGGREGATORS = {"jobright.ai", "simplify.jobs", "linkedin.com", "indeed.com", "glassdoor.com", "ziprecruiter.com", "adzuna.com", "arbeitnow.com", "remoteok.com"}
+AGGREGATORS = {"jobright.ai", "simplify.jobs", "linkedin.com", "indeed.com", "glassdoor.com", "ziprecruiter.com", "adzuna.com", "arbeitnow.com", "remoteok.com", "zapply.jobs", "joinhandshake.com", "wellfound.com", "dice.com", "talent.com", "zippia.com", "lensa.com", "jobgether.com", "tealhq.com"}
 
 
 def is_aggregator(url):
@@ -88,7 +89,14 @@ def _same_location(a, b):
     def norm(value):
         return re.sub(r"[^a-z0-9]+", " ", re.sub(r"\b(united states(?: of america)?|usa|us)\b", "", (value or "").lower())).strip()
     left, right = norm(a), norm(b)
-    return bool(left and right and left == right)
+    if not left or not right:
+        return False
+    if left == right:
+        return True
+    # A single verified employer requisition can cover multiple cities. Require
+    # the complete city/state phrase, not a loose city-name or fuzzy match.
+    return ((len(left.split()) >= 2 and f" {left} " in f" {right} ")
+            or (len(right.split()) >= 2 and f" {right} " in f" {left} "))
 
 
 def match_employer(posting, candidates):
@@ -135,16 +143,38 @@ def company_careers_url(company, title=""):
 def jobright_destinations(url, company_name, title):
     """Read public share metadata; never sign into Jobright or submit applications."""
     import re
-    from poller.net import get_json
+    from poller.net import get_json, get_text
     p = urlsplit(url or "")
     match = re.fullmatch(r"/jobs/info/([a-fA-F0-9]{24})/?", p.path)
     if (p.hostname or "").lower() not in {"jobright.ai", "www.jobright.ai"} or not match:
         return {}
     job_id = match.group(1)
     data = get_json(f"https://jobright.ai/swan/share/job/{job_id}", timeout=5, retries=0)
-    if not isinstance(data, dict) or data.get("success") is not True:
-        return {}
-    detail = (data.get("result") or {}).get("jobDetail") or {}
+    detail = ((data.get("result") or {}).get("jobDetail") or {}) if isinstance(data, dict) and data.get("success") is True else {}
+    if not detail:
+        # Older public shares can fail at the API while their public HTML still
+        # includes company metadata. Read only that page's structured job data.
+        import json
+        from html.parser import HTMLParser
+        class PageData(HTMLParser):
+            def __init__(self):
+                super().__init__()
+                self.capture, self.parts = False, []
+            def handle_starttag(self, tag, attrs):
+                if tag == "script" and dict(attrs).get("id") == "__NEXT_DATA__":
+                    self.capture = True
+            def handle_endtag(self, tag):
+                if tag == "script":
+                    self.capture = False
+            def handle_data(self, value):
+                if self.capture:
+                    self.parts.append(value)
+        page = PageData()
+        page.feed(get_text(f"https://jobright.ai/jobs/info/{job_id}", timeout=5, retries=0) or "")
+        try:
+            detail = json.loads("".join(page.parts))["props"]["pageProps"]["dataSource"]
+        except (ValueError, KeyError, TypeError):
+            return {}
     job, company = detail.get("jobResult") or {}, detail.get("companyResult") or {}
     if (job.get("jobId") != job_id or _company_key(company.get("companyName")) != _company_key(company_name)
             or _title_key(job.get("jobTitle")) != _title_key(title)):
@@ -153,6 +183,19 @@ def jobright_destinations(url, company_name, title):
     if job.get("isCompanySiteLink") is True:
         exact = direct_url(job.get("originalUrl")) or direct_url(job.get("applyLink"))
     return {"application_url": exact, "employer_site_url": direct_url(company.get("companyURL"))}
+
+
+@lru_cache(maxsize=1)
+def _employer_sites():
+    import json
+    from pathlib import Path
+    # Public company-site evidence, never applicant or account data.
+    return json.loads(Path(__file__).with_name("employer_sites.json").read_text())
+
+
+def known_employer_site(name):
+    entry = _employer_sites().get(_company_key(name), {})
+    return direct_url(entry.get("url"))
 
 
 def repair_links(db, *, limit=60, posting_id=None, fetch=True):
@@ -181,8 +224,10 @@ def repair_links(db, *, limit=60, posting_id=None, fetch=True):
         careers = company_careers_url(companies.get(p.company_id), p.title)
         if careers:
             p.employer_site_url = careers
+        elif not p.employer_site_url:
+            p.employer_site_url = known_employer_site(p.company_name)
     cutoff = utcnow() - timedelta(days=1)
-    due = sorted((p for p in pending if not application_url(p)
+    due = sorted((p for p in pending if not application_url(p) and not p.employer_site_url
                   and (not p.application_link_checked_at or p.application_link_checked_at < cutoff)),
                  key=lambda p: (p.application_link_checked_at or cutoff - timedelta(days=1), -p.id))[:limit]
     if fetch and due:
