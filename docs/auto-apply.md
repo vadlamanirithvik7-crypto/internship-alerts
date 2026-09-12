@@ -16,6 +16,12 @@ Controls are checked every two seconds during browser work and immediately befor
 
 The Auto apply page refreshes its live panel every three seconds without reloading your settings. It shows the current company and role, the application step, totals by state, the latest ten attempts, and the Mac's connection status. Worker heartbeats report opening, checking, filling, advancing, submitting, and awaiting confirmation. A heartbeat older than thirty seconds is displayed as disconnected; failed dashboard requests are explicitly marked stale and retry automatically. The owner-only activity endpoint never includes resume contents, saved answers, contact details, or worker credentials.
 
+## Answering questions and reviewing failures
+
+Activity and queue cards open an application help page. **Needs answers** shows each missing question with a text box or the employer's captured answer choices; **Save answers and retry** updates that application's answer snapshot and queues it, even while the worker handles other jobs. Answers stay specific to this application unless the owner explicitly checks Remember for future applications. Submitted or uncertain applications cannot use this flow, and stale question forms are rejected.
+
+Browser errors, unrecognized controls, login requirements, and missing attachments show **Needs manual review**, with the recorded reason and a link to the employer site. These diagnostics are not presented as text questions. Existing string-based question records remain readable; newly captured questions can include structured dropdown choices. The normal role page also links to the relevant application help page.
+
 ## Supported behavior and limits
 
 The worker attempts single-page and common multi-step employer forms, including custom employer portals. It follows recognized Apply, Apply manually, Next, Save and continue, and Review application controls for up to ten steps. Personal data can be sent only to the original employer URL's exact HTTPS origin or the supported ATS hosts (Greenhouse, Lever, Ashby, Workday, and CareerPuck). Other portal transitions, ambiguous controls, employer accounts, CAPTCHA, and unknown required answers need manual completion. This is a general fallback, not universal site compatibility; Workday's account requirement commonly stops automatic completion. Every task still requires an exact employer job URL, a matching rendered role title, a confirmed resume upload, and a final submission permit. General careers links remain Waiting link.

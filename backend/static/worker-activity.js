@@ -1,7 +1,7 @@
 (() => {
   const status = document.getElementById('worker-live-status');
   if (!status) return;
-  const label = value => value.replaceAll('_', ' ').replace(/\b\w/g, char => char.toUpperCase());
+  const label = value => value === 'needs_input' ? 'Needs attention' : value.replaceAll('_', ' ').replace(/\b\w/g, char => char.toUpperCase());
   const time = value => value ? new Date(value).toLocaleTimeString() : 'not connected yet';
   const element = (tag, text) => {
     const node = document.createElement(tag);
@@ -12,9 +12,15 @@
     const article = element('article');
     article.style.cssText = 'padding:12px 0;border-bottom:1px solid var(--border)';
     const link = element('a', `${task.company} · ${task.title}`);
-    link.href = `/jobs/${task.posting_id}`;
-    article.append(link, element('p', `${label(task.state)} — ${task.detail}`),
+    link.href = task.task_url || `/jobs/${task.posting_id}`;
+    article.append(link, element('p', `${task.status_label || label(task.state)} — ${task.detail}`),
       element('small', `Updated ${time(task.updated_at)}`));
+    if (task.state === 'needs_input' && task.task_url) {
+      const action = element('a', task.action_label || 'Review issue');
+      action.href = task.task_url;
+      action.className = 'button secondary';
+      article.append(element('br'), action);
+    }
     return article;
   }
   let busy = false;

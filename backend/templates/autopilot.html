@@ -27,12 +27,13 @@
 <p>Mac launcher: <strong>Start Radar Auto Apply.command</strong><br>Local stop: <strong>Stop Radar Auto Apply.command</strong></p>
 <p>The worker handles supported employer forms. Logins, CAPTCHAs, assessments, unsupported controls, and unclear submissions need your attention. Your Mac must be awake and online. One browser runs at a time; local AI can still use noticeable memory and CPU.</p></section></div>
 <section class="panel"><h2>Application queue · {{total_tasks}}</h2>
-<p>{% for state,count in counts.items() %}{{state.replace('_',' ') | title}}: {{count}}{% if not loop.last %} · {% endif %}{% endfor %}</p>
-{% for task in tasks %}{% set p=postings[task.posting_id] %}
-<article style="padding:16px 0;border-bottom:1px solid var(--border)"><h3><a href="/jobs/{{task.posting_id}}">{{p.company_name}} · {{p.title}}</a></h3><p><strong>{{task.state.replace('_',' ') | title}}</strong> — {{task.detail}}</p>
+<p>{% for state,count in counts.items() %}{{'Needs attention' if state=='needs_input' else state.replace('_',' ') | title}}: {{count}}{% if not loop.last %} · {% endif %}{% endfor %}</p>
+{% for task in tasks %}{% set p=postings[task.posting_id] %}{% set view=task_views[task.id] %}
+<article style="padding:16px 0;border-bottom:1px solid var(--border)"><h3><a href="/autopilot/tasks/{{task.id}}">{{p.company_name}} · {{p.title}}</a></h3><p><strong>{{view.label}}</strong> — {{task.detail}}</p>
 {% if task.confirmation %}<p>{{task.confirmation}}</p>{% endif %}
-{% for q in task.questions | fromjson %}<p>Answer needed: {{q}}</p>{% endfor %}
-{% if task.state=='needs_input' %}<form method="post" action="/autopilot/tasks/{{task.id}}/retry"><button class="secondary">Retry with saved answers</button></form>{% endif %}
+{% for field in view.fields %}<p>Answer needed: {{field.label}}</p>{% endfor %}
+{% for reason in view.blockers %}<p>Review needed: {{reason}}</p>{% endfor %}
+{% if task.state=='needs_input' %}<a class="button secondary" href="/autopilot/tasks/{{task.id}}">{{view.action}}</a>{% endif %}
 {% if task.state in ['needs_input','uncertain'] %}<p><a href="/jobs/{{task.posting_id}}">Open role / record a manual application →</a></p>{% endif %}</article>
 {% else %}<p>Your queue is empty. Connect your Mac, select your resumes, and Start to watch for new matching internships.</p>{% endfor %}
 {% if queue_pages > 1 %}<nav aria-label="Application queue pages">{% if queue_page > 1 %}<a href="/autopilot?page={{queue_page-1}}">← Previous applications</a>{% endif %} <span>Page {{queue_page}} of {{queue_pages}}</span> {% if queue_page < queue_pages %}<a href="/autopilot?page={{queue_page+1}}">Next applications →</a>{% endif %}</nav>{% endif %}</section>

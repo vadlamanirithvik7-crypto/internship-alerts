@@ -183,8 +183,6 @@ def receipt(db, task, payload):
     elif task.state == 'running':
         task.state = 'cancelled' if state == 'cancelled' else 'needs_input'
         task.detail = str(payload.get('detail', 'Please review the employer form.'))[:600]
-        questions = payload.get('questions', [])
-        if not isinstance(questions, list) or len(questions) > 80:
-            raise ValueError('Invalid questions.')
-        task.questions = json.dumps([str(q)[:300] for q in questions])
+        from shared.auto_input import validate_questions
+        task.questions = json.dumps(validate_questions(payload.get('questions', [])))
     task.updated_at = utcnow()

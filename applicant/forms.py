@@ -95,7 +95,7 @@ FIELDS = """els => els.map((e,i) => {
  return {index:i, label:label.slice(0,300), group:group.slice(0,300), type:e.type||e.getAttribute('role')||e.tagName.toLowerCase(),
  required:e.required || e.getAttribute('aria-required')==='true' || label.includes('*'),
  visible:!!(e.offsetWidth||e.offsetHeight||e.getClientRects().length),disabled:e.disabled,
- value:e.value||'',checked:e.checked||false,options:e.options?Array.from(e.options).map(o=>o.text):[]};
+ value:e.value||'',checked:e.checked||false,options:e.options?Array.from(e.options).filter(o=>o.value&&!o.disabled).map(o=>o.text):[]};
 })"""
 
 
@@ -115,10 +115,15 @@ async def fill_form(frame, task, client, model=''):
                 import base64
                 await el.set_input_files({'name':task['filename'],'mimeType':'application/pdf','buffer':base64.b64decode(task['resume'])})
                 uploads+=1
-            elif f['required']: missing.append(label or 'Unidentified required attachment')
+            elif f['required']: missing.append('Required attachment: '+(label or 'Unidentified attachment'))
             continue
         if not f['visible']: continue
         question=f['group'] if kind=='radio' and f['group'] else label
+        if question and kind not in ('file','password'):
+            options=f['options']
+            if kind=='radio' and f['group']:
+                options=[item['label'] for item in fields if item['type']=='radio' and item['group']==f['group']]
+            task.setdefault('_question_fields',{})[question]=[option[:300] for option in options[:300]]
         value=answer_for(question,task['profile'],task['answers'])
         if value is None and f['required']:
             value=await semantic_answer(question,task['answers'],client,model)

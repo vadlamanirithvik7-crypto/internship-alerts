@@ -1,0 +1,22 @@
+{% extends 'base.html' %}
+{% block title %}Application help · Radar{% endblock %}
+{% block content %}
+<a class="back-link" href="/autopilot">← Back to Auto apply</a>
+<div class="page-heading"><div><span class="eyebrow">{{posting.company_name}}</span><h1>{{posting.title}}</h1><p>{{view.label}} · {{task.detail}}</p></div></div>
+{% if error %}<div class="panel" role="alert">{{error}}</div>{% endif %}
+{% if task.state=='needs_input' and not task.submission_started_at %}
+{% if view.fields %}<section class="panel"><h2>Answer the missing questions</h2><p>These are questions from this employer’s application. Saving will queue this application for another attempt with your answers.</p>
+<form method="post" action="/autopilot/tasks/{{task.id}}/answers" class="assistant-form">
+<input type="hidden" name="version" value="{{view.version}}">
+{% for field in view.fields %}{% set index=loop.index0 %}<label><span>{{field.label}}</span>
+{% if field.options %}<select name="answer_{{index}}" required><option value="">Choose an answer</option>{% for option in field.options %}<option value="{{option}}" {% if values[index]==option %}selected{% endif %}>{{option}}</option>{% endfor %}</select>
+{% else %}<textarea name="answer_{{index}}" rows="2" maxlength="1500" required>{{values[index]}}</textarea>{% endif %}</label>{% endfor %}
+<label><input type="checkbox" name="remember" value="yes"> Remember these exact answers for future applications</label>
+<p class="muted">Leave this unchecked for answers specific to this employer, such as availability dates or salary.</p>
+<button>Save answers and retry</button></form></section>{% endif %}
+{% if view.blockers %}<section class="panel"><h2>Employer-site issue</h2><p>This step needs manual review on the employer’s website.</p>{% for reason in view.blockers %}<p>{{reason}}</p>{% endfor %}<p>You can complete the application there and record it as Applied on the role page. A browser, login, verification, or attachment issue cannot be fixed by entering a text answer here.</p>
+{% if not view.fields %}<form method="post" action="/autopilot/tasks/{{task.id}}/retry"><button class="secondary">Try the worker again</button></form>{% endif %}</section>{% endif %}
+{% elif task.state=='uncertain' %}<section class="panel"><h2>Check the employer confirmation</h2><p>A submission may have been sent. Check the employer site or your email before applying again. Automatic retry is disabled to prevent duplicate applications.</p></section>
+{% else %}<section class="panel"><h2>{{view.label}}</h2><p>{{task.detail}}</p>{% if task.confirmation %}<p>{{task.confirmation}}</p>{% endif %}{% if task.state=='queued' %}<p>{% if config.mode=='running' %}Your connected Mac will pick this up. Follow its progress on Auto apply.{% else %}Your worker is {{config.mode}}. Start / Resume from Auto apply when you want it to continue.{% endif %}</p>{% endif %}</section>{% endif %}
+<section class="panel"><h2>Employer application</h2>{% if task.target_url %}<a class="button" href="{{task.target_url}}" target="_blank" rel="noopener noreferrer">Open employer application ↗</a>{% endif %}<p><a href="/jobs/{{posting.id}}">View role / record a manual application →</a></p></section>
+{% endblock %}

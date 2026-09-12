@@ -494,12 +494,14 @@ def job_detail(request: Request, posting_id: int, profile: int | Literal[""] = 0
         else db.scalar(select(ResumeProfile).order_by(ResumeProfile.id))
     )
     explanation = explain(db, selected, p) if selected else None
+    from shared.db import AutoApplication
+    auto_task = None if request.state.demo else db.scalar(select(AutoApplication).where(AutoApplication.posting_id==p.id))
     return templates.TemplateResponse(
         request, "job.html", {"p": p, "profile": selected, "explanation": explanation,
                              "restriction_reasons": restriction_reasons(p.title, p.description),
                              "application_url": application_url(p),
                              "employer_site_url": direct_url(p.employer_site_url),
-                             "employer_search_url": employer_search_url(p)}
+                             "employer_search_url": employer_search_url(p), "auto_task": auto_task}
     )
 
 
