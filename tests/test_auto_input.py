@@ -226,6 +226,11 @@ def test_batch_retry_preserves_specific_answers_and_submission_guards(client):
         task=db.get(AutoApplication,tid)
         assert task.state=='queued' and task.resume_id==rid
         assert json.loads(task.answers)=={'Country?':'Canada','GPA':'3.00'}
+        task.state='needs_input';db.commit()
+    c.post('/autopilot/retry-attention',data={'replace_saved':'yes'})
+    with Session() as db:
+        task=db.get(AutoApplication,tid)
+        assert json.loads(task.answers)['Country?']=='United States'
         task.state='needs_input';task.submission_started_at=utcnow();db.commit()
     c.post('/autopilot/retry-attention')
     with Session() as db: assert db.get(AutoApplication,tid).state=='needs_input'
