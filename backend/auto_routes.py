@@ -4,11 +4,17 @@ import hashlib
 import hmac
 import json
 import secrets
+from datetime import timedelta
 from fastapi import APIRouter, Depends, HTTPException, Request, BackgroundTasks, Query
 from fastapi.responses import RedirectResponse, Response
 from sqlalchemy import select, func
-from shared.db import AutoApplication, StoredResume, Posting, utcnow
+from shared.db import AutoApplication, AutoApplySettings, StoredResume, Posting, utcnow
 from shared import auto_apply as queue
+
+PHASES = {'opening':'Opening employer application', 'checking':'Checking requirements',
+          'filling':'Filling saved details and attaching your resume', 'advancing':'Moving to the next step',
+          'ready':'Ready for final submission', 'submitting':'Sending application',
+          'confirmation':'Waiting for employer confirmation'}
 
 
 def register(owner_app, templates, get_db):
@@ -16,6 +22,26 @@ def register(owner_app, templates, get_db):
         if request.state.demo:
             raise HTTPException(404)
     router = APIRouter(dependencies=[Depends(private)])
+
+    @router.get('/autopilot/activity')
+    def activity(db=Depends(get_db)):
+        cfg=db.get(AutoApplySettings,1) or queue.settings(db)
+        now=utcnow()
+        counts=dict(db.execute(select(AutoApplication.state,func.count()).group_by(AutoApplication.state)).all())
+        active=db.scalar(select(AutoApplication).where(AutoApplication.state.in_(['running','submitting'])).order_by(AutoApplication.claimed_at.desc()).limit(1))
+        recent=list(db.scalars(select(AutoApplication).where(AutoApplication.state.not_in(['queued','waiting_link'])).order_by(AutoApplication.updated_at.desc(),AutoApplication.id.desc()).limit(10)))
+        def item(task):
+            if not task: return None
+            posting=db.get(Posting,task.posting_id)
+            return {'id':task.id,'posting_id':task.posting_id,'company':posting.company_name,
+                    'title':posting.title,'state':task.state,'detail':task.detail,
+                    'updated_at':task.updated_at.isoformat()+'Z'}
+        result={'mode':cfg.mode,'connected':bool(cfg.last_seen_at and cfg.last_seen_at>now-timedelta(seconds=30)),
+                'last_seen_at':cfg.last_seen_at.isoformat()+'Z' if cfg.last_seen_at else None,
+                'counts':counts,'total':sum(counts.values()),'active':item(active),
+                'recent':[item(task) for task in recent],'checked_at':now.isoformat()+'Z'}
+        db.commit()
+        return result
 
     @router.get('/autopilot')
     def page(request: Request, page: int = Query(1, ge=1), db=Depends(get_db)):
@@ -136,6 +162,14 @@ def register(owner_app, templates, get_db):
                     elif action=='heartbeat' and task.state=='submitting':
                         result['allowed']=cfg.mode=='running' and task.generation==cfg.generation
                         task.claimed_at=utcnow()
+                    if action=='heartbeat' and result['allowed'] and data.get('phase') in PHASES:
+                        detail=PHASES[data['phase']]
+                        step=data.get('step')
+                        if isinstance(step,int) and 1<=step<=10:
+                            detail+=f' · Step {step}'
+                        if detail!=task.detail:
+                            task.detail=detail
+                            task.updated_at=utcnow()
             elif action=='local_stop':
                 queue.control(db,cfg,'stopped'); result['mode']='stopped'
             else: raise ValueError('Unknown worker action.')

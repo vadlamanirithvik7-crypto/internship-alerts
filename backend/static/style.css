@@ -1289,7 +1289,8 @@ details > summary {
     gap: 4px;
     font-size: 9px;
     color: #8a978a;
-    min-width: 65px;
+    min-width: 0;
+    flex: 1;
     min-height: 44px;
   }
   .mobile-nav a > span {

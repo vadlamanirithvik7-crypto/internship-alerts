@@ -304,3 +304,60 @@ def test_custom_form_origin_is_scoped():
     assert not supported('http://careers.employer.example/submit',employer)
     assert not supported('https://careers.employer.example:444/submit',employer)
     assert not supported('https://user:pass@careers.employer.example/submit',employer)
+
+
+def test_live_activity_reports_progress_without_applicant_data(client, monkeypatch):
+    c,m,Session=client
+    with Session() as db: setup(db)
+    monkeypatch.setenv('ADMIN_PASSWORD','private')
+    assert c.get('/autopilot/activity').status_code==401
+    headers={'Authorization':'Bearer test-token'}
+    task=c.post('/integrations/auto-apply',headers=headers,json={'action':'claim'}).json()['task']
+    heartbeat={'action':'heartbeat','task_id':task['id'],'claim_token':task['claim_token'],'phase':'filling','step':2}
+    assert c.post('/integrations/auto-apply',headers=headers,json=heartbeat).json()['allowed']
+    response=c.get('/autopilot/activity',auth=('owner','private')); data=response.json()
+    assert data['mode']=='running' and data['connected']
+    assert data['active']['detail']=='Filling saved details and attaching your resume · Step 2'
+    assert data['counts']['running']==1
+    assert not {'profile','answers','resume','claim_token'}.intersection(data['active'])
+    assert 'applicant@example.com' not in response.text and task['claim_token'] not in response.text
+    heartbeat.update(phase='<script>untrusted</script>',step=999)
+    c.post('/integrations/auto-apply',headers=headers,json=heartbeat)
+    assert '<script>' not in c.get('/autopilot/activity',auth=('owner','private')).text
+    with Session() as db:
+        cfg=queue.settings(db);cfg.last_seen_at=utcnow()-timedelta(minutes=2);db.commit()
+    assert not c.get('/autopilot/activity',auth=('owner','private')).json()['connected']
+    c.post('/autopilot/control',auth=('owner','private'),data={'mode':'paused'})
+    paused=c.get('/autopilot/activity',auth=('owner','private')).json()
+    assert paused['mode']=='paused' and paused['active'] is None
+
+
+def test_activity_panel_updates_without_reloading():
+    import asyncio
+    from pathlib import Path
+    from playwright.async_api import async_playwright
+    script=Path('backend/static/worker-activity.js').read_text()
+    async def check():
+        async with async_playwright() as p:
+            browser=await p.chromium.launch(headless=True)
+            page=await browser.new_page()
+            data={'mode':'running','connected':True,'last_seen_at':'2026-09-12T00:00:00Z',
+                  'checked_at':'2026-09-12T00:00:00Z','total':1,'counts':{'running':1},'recent':[],
+                  'active':{'company':'<img src=x>','title':'Software Intern','posting_id':1,
+                            'state':'running','detail':'Filling saved details','updated_at':'2026-09-12T00:00:00Z'}}
+            async def route(request):
+                if request.request.url.endswith('/autopilot/activity'):
+                    await request.fulfill(status=200,json=data)
+                else:
+                    html=''.join(f'<div id="{name}"></div>' for name in ['worker-live-status','worker-mode','worker-connection','worker-current','worker-counts','worker-recent','worker-updated'])
+                    await request.fulfill(status=200,content_type='text/html',body=html+'<script>'+script+'</script>')
+            await page.route('**/*',route)
+            await page.goto('https://radar.example/autopilot')
+            await page.wait_for_function("document.getElementById('worker-live-status').textContent === 'Filling saved details'")
+            assert await page.locator('img').count()==0
+            assert await page.locator('#worker-current a').get_attribute('href')=='/jobs/1'
+            data.update(mode='paused',active=None)
+            await page.wait_for_function("document.getElementById('worker-live-status').textContent.startsWith('Paused')",timeout=6000)
+            assert await page.locator('#worker-current').inner_text()==''
+            await browser.close()
+    asyncio.run(check())
