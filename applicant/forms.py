@@ -1,6 +1,7 @@
 """Conservative form filling: saved facts only, no model-generated claims."""
 import json
 import re
+from datetime import datetime
 from urllib.parse import urlsplit
 import httpx
 from shared.employer_questions import greenhouse_questions_url, schema_questions, discovery_answer
@@ -190,7 +191,10 @@ async def fill_form(frame, task, client, model=''):
                 if selected is None and not schema.get(normalize(question)) and await el.get_attribute('readonly') is None:
                     # Searchable school lists may load only a small initial page.
                     await el.click();await el.fill(str(value))
-                    await frame.get_by_role('option').first.wait_for(state='visible',timeout=2500)
+                    await frame.wait_for_function('''value => {
+                        const norm = s => s.toLowerCase().replace(/[^a-z0-9]+/g,' ').trim().replace(/^the /,'').replace(/ at /g,' ');
+                        return Array.from(document.querySelectorAll('[role="option"]')).some(e => norm(e.textContent) === norm(value));
+                    }''',arg=str(value),timeout=2500)
                     options=await frame.get_by_role('option').all_text_contents()
                     task.setdefault('_question_fields',{})[question]=options[:300]
                     selected=match_option(question,value,options)
@@ -203,6 +207,12 @@ async def fill_form(frame, task, client, model=''):
                 await option.wait_for(state='visible',timeout=2500)
                 await option.click()
             elif kind not in ('password',):
+                if kind in ('date','month'):
+                    for fmt in ('%Y-%m-%d','%B %d, %Y','%B %d %Y','%m/%d/%Y'):
+                        try:
+                            value=datetime.strptime(str(value),fmt).strftime('%Y-%m-%d' if kind=='date' else '%Y-%m')
+                            break
+                        except ValueError: pass
                 await el.fill(str(value))
             else: missing.append('Employer account login required')
         except Exception:

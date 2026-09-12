@@ -161,12 +161,13 @@ def test_worker_searches_school_beyond_initial_menu():
     async def check():
         async with async_playwright() as runtime:
             browser=await runtime.chromium.launch();page=await browser.new_page()
-            await page.set_content('''<label for="school">School*</label><input id="school" role="combobox" required><div id="menu"><div role="option">Aalto University</div></div>
-            <script>school.oninput=()=>{menu.innerHTML='<div role="option">University of Texas at Austin</div>';menu.firstChild.onclick=()=>{school.value=menu.firstChild.textContent;menu.innerHTML='';};};</script>''')
+            await page.set_content('''<label for="graduation">Graduation date</label><input id="graduation" type="date" required><label for="school">School*</label><input id="school" role="combobox" required><div id="menu"><div role="option">Aalto University</div></div>
+            <script>school.oninput=()=>{setTimeout(()=>{menu.innerHTML='<div role="option">University of Texas at Austin</div>';menu.firstChild.onclick=()=>{school.value=menu.firstChild.textContent;menu.innerHTML='';};},150);};</script>''')
             async with httpx.AsyncClient() as client:
-                missing,_=await fill_form(page,{'profile':{},'answers':{PREFIX+'school':'University of Texas at Austin'}},client)
+                missing,_=await fill_form(page,{'profile':{},'answers':{PREFIX+'school':'University of Texas at Austin',PREFIX+'graduation_date':'May 10, 2028'}},client)
             assert missing==[]
             assert await page.locator('#school').input_value()=='University of Texas at Austin'
+            assert await page.locator('#graduation').input_value()=='2028-05-10'
             await browser.close()
     asyncio.run(check())
 
