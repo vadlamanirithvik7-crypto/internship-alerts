@@ -128,6 +128,7 @@ def test_phone_inline_answers_survive_polling_and_continue_in_place(client):
         browser=runtime.chromium.launch()
         page=browser.new_page(viewport={'width':390,'height':844},is_mobile=True,has_touch=True)
         page.goto(origin+'/autopilot')
+        page.locator('#worker-questions summary').click()
         field=page.locator('#worker-questions').get_by_label('Earliest start date?',exact=True)
         field.fill('June 1, 2027')
         with page.expect_response('**/autopilot/activity'):
@@ -151,3 +152,36 @@ def test_phone_inline_answers_survive_polling_and_continue_in_place(client):
     with Session() as db:
         task=db.get(AutoApplication,tid)
         assert task.state=='queued' and json.loads(task.answers)['Earliest start date?']=='June 1, 2027'
+
+
+def test_show_more_questions_preserves_expanded_draft(client):
+    from datetime import timedelta
+    from shared.db import Posting
+    from test_apply_navigation import local_app
+    pw=pytest.importorskip('playwright.sync_api')
+    c,_,Session=client
+    with Session() as db:
+        tid,_,rid=waiting_task(db,['Earliest start date?'])
+        for i in range(20):
+            posting=Posting(company_name=f'Fixture {i}',title='Software Intern',url=f'https://example.com/{i}',
+                            source='test',raw_hash=f'inline-{i}',first_seen_at=utcnow())
+            db.add(posting); db.flush()
+            db.add(AutoApplication(posting_id=posting.id,resume_id=rid,application_key=f'inline-{i}',
+                                   target_url=posting.url,applicant='{}',state='needs_input',
+                                   questions='["Fixture question?"]',updated_at=utcnow()-timedelta(days=1)))
+        db.commit()
+    assert len(c.get('/autopilot/activity').json()['attention'])==20
+    assert len(c.get('/autopilot/activity?question_limit=40').json()['attention'])==21
+    with local_app(client[1].app) as origin,pw.sync_playwright() as runtime:
+        browser=runtime.chromium.launch()
+        page=browser.new_page(viewport={'width':390,'height':844},is_mobile=True,has_touch=True)
+        page.goto(origin+'/autopilot')
+        page.locator('#worker-questions summary').first.click()
+        field=page.locator('#worker-questions').get_by_label('Earliest start date?',exact=True)
+        field.fill('June 1, 2027')
+        page.get_by_role('button',name='Show more applications with questions',exact=True).click()
+        pw.expect(page.locator('#worker-questions details')).to_have_count(21)
+        assert field.input_value()=='June 1, 2027' and field.is_visible()
+        pw.expect(page.locator('#questions-more')).to_be_hidden()
+        assert page.url==origin+'/autopilot'
+        browser.close()

@@ -2,26 +2,27 @@
 {% block title %}Auto apply · Radar{% endblock %}
 {% block content %}
 <div class="page-heading"><div><span class="eyebrow">YOUR MAC, WORKING IN THE BACKGROUND</span><h1>Auto apply</h1><p>A separate background browser works through your queued internships and new matches. Your mouse, keyboard, and normal browser stay yours.</p></div></div>
-<section class="panel" id="application-questions" aria-labelledby="questions-heading">
-<h2 id="questions-heading">Questions waiting for you</h2>
-<p>Answer the employer’s questions here, then press Save and continue. Your Mac will retry the application with your answers and selected resume. It is marked Applied only after employer confirmation.</p>
-<p id="questions-summary">Loading unanswered questions…</p>
-<p id="answers-result" role="status"></p>
-<div id="worker-questions"></div>
-<noscript><p>Enable JavaScript to answer here, or use Answer questions in the application queue below.</p></noscript>
-</section>
 <section class="panel"><h2 id="worker-mode">Worker: {{config.mode | title}}</h2><p id="worker-connection">Last connected: {{config.last_seen_at or 'Not connected yet'}}{% if config.last_seen_at %} UTC{% endif %}.</p>
 <form action="/autopilot/control" method="post" class="assistant-links"><button name="mode" value="running">Start / Resume</button><button name="mode" value="paused" class="secondary">Pause</button><button name="mode" value="stopped" class="secondary">Stop</button></form>
 <p class="muted">Pause keeps your queue. Stop also tells the local worker to exit and close its browser. Controls reach an online worker within a few seconds. An application already sent cannot be withdrawn; uncertain submissions will not retry automatically.</p>
 <p>New listings discovered after your first Start are added automatically, including listings found while paused. US · Summer 2027 · internships only · no co-ops. Exact employer links are required.</p>
 <form action="/autopilot/backfill" method="post"><button class="secondary">Queue existing internships</button></form>
 <p class="muted">Add existing matching roles using your saved resumes and answers. Applied, dismissed, closed, and duplicate roles are skipped. New discoveries take priority over the backlog. This button adds work to the queue; Start / Resume and a connected Mac run it.</p></section>
+<section class="panel" id="application-questions" aria-labelledby="questions-heading">
+<h2 id="questions-heading">Questions waiting for you</h2>
+<p>Expand an application to answer the employer’s questions here, then press Save and continue. Your Mac will retry it with your answers and selected resume. It is marked Applied only after employer confirmation.</p>
+<p id="questions-summary">Loading unanswered questions…</p>
+<p id="answers-result" role="status"></p>
+<div id="worker-questions"></div>
+<button id="questions-more" type="button" class="secondary" hidden>Show more applications with questions</button>
+<noscript><p>Enable JavaScript to answer here. Application help pages remain available through the company links in the queue below.</p></noscript>
+</section>
 <section class="panel" aria-labelledby="live-worker-heading"><h2 id="live-worker-heading">Live worker activity</h2>
 <p id="worker-live-status" role="status">Connecting to your worker status…</p>
 <div id="worker-current"></div><p id="worker-counts"></p>
 <h3>Recent activity</h3><div id="worker-recent"><p>No activity loaded yet.</p></div>
 <p class="muted" id="worker-updated">Updates automatically every 3 seconds while this page is open.</p></section>
-<script src="/static/worker-activity.js?v=inline-answers-2" defer></script>
+<script src="/static/worker-activity.js?v=inline-answers-3" defer></script>
 <div class="assistant-grid"><section class="panel"><h2>Choose your resumes</h2><p><a href="/apply-settings">Upload PDFs and save your contact details →</a></p>
 <form action="/autopilot/settings" method="post" class="assistant-form">
 {% for role,label in [('software','Software engineering'),('hardware','Electrical / hardware / chips'),('embedded','Embedded / firmware')] %}
