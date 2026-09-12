@@ -8,7 +8,7 @@ Use the private website on your phone; no App Store download is needed.
 4. Use **Not interested** on a feed card to hide it and stop alerts for it. Applications → Not interested retains it; choose New to restore it.
 5. **Email updates** shows related receipts, interviews, rejections and next steps once Gmail is connected. Ambiguous matches need your review; the app sends no replies.
 
-Automatic submission, the scheduled browser worker and its queue controls have been removed. Old queue URLs lead to Applications, old submission requests return 410, and startup cancels unsubmitted tasks. Historical tasks whose submission had started remain uncertain until confirmation. Existing PDFs and application history are retained.
+The original automatic submission queue remains retired. A separate opt-in Mac worker is documented in [Local auto apply](auto-apply.md). Old queue URLs lead to Applications, old submission requests return 410, and startup cancels unsubmitted tasks. Historical tasks whose submission had started remain uncertain until confirmation. Existing PDFs and application history are retained.
 
 Filters cover US summer 2027 internships/co-ops in software, embedded/firmware, and electrical/hardware/chip design. Role identity comes from titles. Listed citizenship/green-card requirements and graduate-only qualifications are excluded; bachelor's alternatives and optional advanced degrees are allowed. Requirements absent from the source cannot be verified, so review work authorization and qualifications on the employer site.
 

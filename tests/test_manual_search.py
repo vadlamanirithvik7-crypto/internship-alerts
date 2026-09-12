@@ -167,10 +167,10 @@ def test_old_application_tasks_retired_without_losing_history(db, started, expec
     assert resume.content
 
 
-def test_retired_worker_never_connects_or_submits(capsys):
+def test_disconnected_worker_never_connects_or_submits(capsys, tmp_path):
     from applicant.worker import main
-    assert main() == 0
-    assert 'disabled' in capsys.readouterr().out
+    assert main(["--config", str(tmp_path / "missing.json")]) == 0
+    assert 'disconnected' in capsys.readouterr().out
 
 
 def test_missing_requirements_stay_visible_for_manual_review(client):

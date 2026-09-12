@@ -71,7 +71,7 @@ async def access_control(request, call_next):
         request.scope["path"].removeprefix(request.scope.get("root_path", "")) or "/"
     )
     request.state.route_path = route_path
-    if route_path not in ("/healthz", "/integrations/mail", "/login") and not route_path.startswith("/static/"):
+    if route_path not in ("/healthz", "/integrations/mail", "/integrations/auto-apply", "/login") and not route_path.startswith("/static/"):
         if request.state.demo:
             if request.method not in ("GET", "HEAD"):
                 return JSONResponse(
@@ -746,4 +746,6 @@ demo_app.mount(
 )
 from backend.apply_routes import register as register_application_routes
 register_application_routes(app, templates, get_db)
+from backend.auto_routes import register as register_auto_routes
+register_auto_routes(app, templates, get_db)
 app.mount("/demo", demo_app)
