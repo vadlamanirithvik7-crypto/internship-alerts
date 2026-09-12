@@ -11,6 +11,7 @@ from sqlalchemy import select, func
 from shared.db import AutoApplication, AutoApplySettings, StoredResume, Posting, utcnow
 from shared import auto_apply as queue
 from shared.auto_input import question_view
+from shared.employer_questions import greenhouse_questions_url, schema_questions, refresh_questions, question_key, SOURCE_KEY, discovery_answer
 
 PHASES = {'opening':'Opening employer application', 'checking':'Checking requirements',
           'filling':'Filling saved details and attaching your resume', 'advancing':'Moving to the next step',
@@ -41,8 +42,11 @@ def register(owner_app, templates, get_db):
                 continue
             answer_ids.append(task.id)
             if len(attention)<question_limit:
+                saved={question_key(k):v for k,v in json.loads(task.answers).items()}
                 attention.append({'id':task.id,'company':posting.company_name,'title':posting.title,
-                                  'fields':view['fields'],'blockers':view['blockers'],'version':view['version']})
+                                  'fields':view['fields'],'blockers':view['blockers'],'version':view['version'],
+                                  'can_refresh':bool(greenhouse_questions_url(task.target_url)),
+                                  'values':[saved.get(question_key(f['label']),'') for f in view['fields']]})
         def item(task):
             if not task: return None
             posting=db.get(Posting,task.posting_id)
@@ -134,6 +138,40 @@ def register(owner_app, templates, get_db):
             return {'id':task.id,'state':task.state,'message': 'Answers saved. Your connected Mac will continue this application from the queue.' if cfg.mode=='running' else 'Answers saved and queued. Use Start / Resume and connect your Mac to continue.'}
         return RedirectResponse(f'/autopilot/tasks/{task_id}',303)
 
+    @router.post('/autopilot/tasks/{task_id}/refresh-questions')
+    async def refresh_task_questions(task_id:int,request:Request,db=Depends(get_db)):
+        import requests
+        cfg=queue.settings(db)
+        task=db.scalar(select(AutoApplication).where(AutoApplication.id==task_id).with_for_update())
+        if not task or task.state!='needs_input' or task.submission_started_at:
+            raise HTTPException(409,'Only unsubmitted applications waiting for input can refresh questions.')
+        view=question_view(task);form=await request.form()
+        if form.get('version')!=view['version']: raise HTTPException(409,'Questions changed. Reload before refreshing.')
+        url=greenhouse_questions_url(task.target_url)
+        if not url: raise HTTPException(422,'This employer does not provide supported question metadata.')
+        try:
+            response=requests.get(url,timeout=12,allow_redirects=False)
+            response.raise_for_status();schema=schema_questions(response.json())
+            if not schema: raise ValueError('No question metadata')
+        except (requests.RequestException,ValueError):
+            raise HTTPException(503,'Could not retrieve employer choices. Your draft is unchanged.') from None
+        saved=json.loads(task.answers)
+        for i,field in enumerate(view['fields']):
+            value=str(form.get(f'answer_{i}','')).strip()
+            if len(value)>1500: raise HTTPException(422,'Answers must be at most 1,500 characters.')
+            if value: saved[field['label']]=value
+        source=json.loads(cfg.answers).get(SOURCE_KEY)
+        if source: saved[SOURCE_KEY]=source
+        updated=refresh_questions(json.loads(task.questions),schema)
+        for q in updated:
+            if isinstance(q,dict):
+                default=discovery_answer(q['label'],q['options'],saved)
+                if default and not saved.get(q['label']): saved[q['label']]=default
+        task.answers=json.dumps(saved);task.questions=json.dumps(updated)
+        task.detail='Employer choices refreshed. Review your answers, then Save and continue.'
+        task.updated_at=utcnow();db.commit()
+        return {'message':'Choices refreshed and your draft saved. Review dropdown selections before continuing.'}
+
     @router.post('/autopilot/backfill')
     def backfill(db=Depends(get_db)):
         cfg = queue.settings(db)
@@ -143,6 +181,22 @@ def register(owner_app, templates, get_db):
             raise HTTPException(422, str(e)) from None
         db.commit()
         return RedirectResponse('/autopilot', 303)
+
+    @router.post('/autopilot/retry-attention')
+    async def retry_attention(request:Request,db=Depends(get_db)):
+        form=await request.form()
+        cfg=queue.settings(db)
+        try: queue.ready(db,cfg)
+        except ValueError as e: raise HTTPException(422,str(e)) from None
+        defaults=json.loads(cfg.answers)
+        for task in db.scalars(select(AutoApplication).where(AutoApplication.state=='needs_input',AutoApplication.submission_started_at.is_(None)).with_for_update()):
+            # Keep each task's resume, applicant snapshot, and specific answers.
+            specific=json.loads(task.answers)
+            task.answers=json.dumps({**specific,**defaults} if form.get('replace_saved')=='yes' else {**defaults,**specific})
+            task.state='queued';task.questions='[]';task.claim_token=None;task.updated_at=utcnow()
+            task.detail='Retry requested with saved answers and updated form handling.'
+        db.commit()
+        return RedirectResponse('/autopilot',303)
 
     @router.post('/autopilot/settings')
     async def save(request: Request, db=Depends(get_db)):
@@ -222,6 +276,8 @@ def register(owner_app, templates, get_db):
                         'title':p.title,'company':p.company_name,'profile':json.loads(task.applicant),
                         'answers':json.loads(task.answers),'resume':base64.b64encode(r.content).decode(),
                         'filename':r.filename}
+                    source=json.loads(cfg.answers).get(SOURCE_KEY)
+                    if source: result['task']['answers'][SOURCE_KEY]=source
             elif action in ('heartbeat','permit','result'):
                 task=db.get(AutoApplication,int(data.get('task_id',0)))
                 if not task or not task.claim_token or not hmac.compare_digest(task.claim_token,str(data.get('claim_token',''))):

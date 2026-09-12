@@ -26,7 +26,7 @@
   const forms = new Map();
   let questionLimit = 20;
   let saving = false;
-  function answerForm(task) {
+  function answerForm(task, draft = {}) {
     const article = element('details');
     article.style.cssText = 'padding:16px 0;border-bottom:1px solid var(--border)';
     const summary = element('summary', `${task.company} · ${task.title} — ${task.fields.length} questions`);
@@ -52,7 +52,17 @@
         const empty = element('option', 'Choose your answer'); empty.value = ''; input.append(empty);
         field.options.forEach(value => { const option = element('option', value); option.value = value; input.append(option); });
       } else { input.rows = 2; input.maxLength = 1500; }
+      const previous = draft[field.label] ?? task.values?.[i] ?? '';
+      input.value = previous;
       label.append(input); form.append(label);
+      if (field.options.length && previous && !field.options.includes(previous)) {
+        form.append(element('p', `Previous entry: ${previous}. Please choose the employer’s exact option.`));
+      }
+      if (field.options.some(option => option.length > 100)) {
+        const choices = element('ul');
+        field.options.forEach(option => choices.append(element('li',option)));
+        form.append(choices);
+      }
     });
     const rememberLabel = element('label');
     const remember = element('input'); remember.type = 'checkbox'; remember.name = 'remember'; remember.value = 'yes';
@@ -60,6 +70,21 @@
     const button = element('button', 'Save and continue'); button.type = 'submit';
     const feedback = element('p'); feedback.setAttribute('role', 'status');
     form.append(rememberLabel, button, feedback);
+    if (task.can_refresh) {
+      const reload = element('button','Refresh employer choices'); reload.type='button';reload.className='secondary';
+      reload.addEventListener('click',async () => {
+        if (saving) return;
+        saving=true; reload.disabled=true; feedback.textContent='Saving your draft and retrieving employer choices…';
+        try {
+          const response=await fetch(`/autopilot/tasks/${task.id}/refresh-questions`,{method:'POST',body:new FormData(form),headers:{Accept:'application/json'},signal:AbortSignal.timeout(20000)});
+          const data=await response.json();
+          if (!response.ok) throw new Error(data.detail || 'Could not refresh choices.');
+          feedback.textContent=data.message;
+        } catch(error) { feedback.textContent=error.message; }
+        finally { saving=false;reload.disabled=false;refresh(); }
+      });
+      form.append(reload);
+    }
     form.addEventListener('submit', async event => {
       event.preventDefault();
       if (saving) return;
@@ -91,8 +116,15 @@
     for (const task of data.attention) {
       const existing = forms.get(task.id);
       if (existing && existing.version === task.version) continue;
+      const draft = {};
+      if (existing) existing.article.querySelectorAll('form > label').forEach(label => {
+        const input=label.querySelector('textarea,select');
+        if (input?.value) draft[label.querySelector('span').textContent]=input.value;
+      });
+      const opened=existing?.article.open;
       if (existing) existing.article.remove();
-      const entry = answerForm(task); forms.set(task.id, entry); container.append(entry.article);
+      const entry = answerForm(task,draft); entry.article.open=!!opened;
+      forms.set(task.id, entry); container.append(entry.article);
     }
     document.getElementById('questions-summary').textContent = `${data.answer_count} applications have questions you can answer here. ` +
       (data.answer_count > forms.size ? `Showing ${forms.size}. Use Show more to see the rest. ` : '') +
