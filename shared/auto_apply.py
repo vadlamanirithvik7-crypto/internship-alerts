@@ -64,15 +64,18 @@ def control(db, cfg, mode):
             task.detail = 'Paused; preparation will restart when resumed.'
 
 
-def replenish(db, cfg):
-    if not cfg.started_at:
+def replenish(db, cfg, *, include_existing=False):
+    if not cfg.started_at and not include_existing:
         return
-    if cfg.last_queued_at and cfg.last_queued_at > utcnow() - timedelta(seconds=60):
+    if not include_existing and cfg.last_queued_at and cfg.last_queued_at > utcnow() - timedelta(seconds=60):
         return
     cfg.last_queued_at = utcnow()
     profile = ready(db, cfg)
     # Stable task snapshots keep resume and answers consistent during a run.
-    rows = list(db.scalars(select(Posting).where(Posting.target_eligible.is_(True), Posting.first_seen_at >= cfg.started_at)))
+    query = select(Posting).where(Posting.target_eligible.is_(True))
+    if not include_existing:
+        query = query.where(Posting.first_seen_at >= cfg.started_at)
+    rows = list(db.scalars(query.order_by(Posting.first_seen_at.desc(), Posting.id.desc())))
     tasks = list(db.scalars(select(AutoApplication)))
     known = {t.application_key for t in tasks}
     destinations = {t.destination_key for t in tasks if t.destination_key}
@@ -90,7 +93,7 @@ def replenish(db, cfg):
                 destinations.add(key)
     for p in rows:
         key = identity(p)
-        if key in known or key in applied or p.closed_at or p.first_seen_at < cfg.started_at:
+        if key in known or key in applied or p.closed_at:
             continue
         roles = role_tags(p.title)
         role = roles[0] if roles else ''
@@ -135,7 +138,10 @@ def claim(db, cfg):
     replenish(db, cfg)
     if db.scalar(select(AutoApplication.id).where(AutoApplication.state.in_(['running','submitting'])).limit(1)):
         return None
-    for t in db.scalars(select(AutoApplication).where(AutoApplication.state == 'queued').order_by(AutoApplication.id)):
+    # New discoveries stay ahead of the historical backlog.
+    for t in db.scalars(select(AutoApplication).join(Posting, Posting.id == AutoApplication.posting_id)
+                       .where(AutoApplication.state == 'queued')
+                       .order_by(Posting.first_seen_at.desc(), AutoApplication.id)):
         if not available(db, t):
             t.state, t.detail = 'cancelled', 'Role closed, excluded, dismissed, or already applied.'
             continue

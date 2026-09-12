@@ -1,11 +1,13 @@
 {% extends 'base.html' %}
 {% block title %}Auto apply · Radar{% endblock %}
 {% block content %}
-<div class="page-heading"><div><span class="eyebrow">YOUR MAC, WORKING IN THE BACKGROUND</span><h1>Auto apply</h1><p>A separate background browser applies to new matching internships. Your mouse, keyboard, and normal browser stay yours.</p></div></div>
+<div class="page-heading"><div><span class="eyebrow">YOUR MAC, WORKING IN THE BACKGROUND</span><h1>Auto apply</h1><p>A separate background browser works through your queued internships and new matches. Your mouse, keyboard, and normal browser stay yours.</p></div></div>
 <section class="panel"><h2>Worker: {{config.mode | title}}</h2><p>Last connected: {{config.last_seen_at or 'Not connected yet'}}{% if config.last_seen_at %} UTC{% endif %}. Refresh this page for the latest progress.</p>
 <form action="/autopilot/control" method="post" class="assistant-links"><button name="mode" value="running">Start / Resume</button><button name="mode" value="paused" class="secondary">Pause</button><button name="mode" value="stopped" class="secondary">Stop</button></form>
 <p class="muted">Pause keeps your queue. Stop also tells the local worker to exit and close its browser. Controls reach an online worker within a few seconds. An application already sent cannot be withdrawn; uncertain submissions will not retry automatically.</p>
-<p>Only new listings discovered after your first Start are added, including listings found while paused. US · Summer 2027 · internships only · no co-ops. Exact employer links are required.</p></section>
+<p>New listings discovered after your first Start are added automatically, including listings found while paused. US · Summer 2027 · internships only · no co-ops. Exact employer links are required.</p>
+<form action="/autopilot/backfill" method="post"><button class="secondary">Queue existing internships</button></form>
+<p class="muted">Add existing matching roles using your saved resumes and answers. Applied, dismissed, closed, and duplicate roles are skipped. New discoveries take priority over the backlog. This button adds work to the queue; Start / Resume and a connected Mac run it.</p></section>
 <div class="assistant-grid"><section class="panel"><h2>Choose your resumes</h2><p><a href="/apply-settings">Upload PDFs and save your contact details →</a></p>
 <form action="/autopilot/settings" method="post" class="assistant-form">
 {% for role,label in [('software','Software engineering'),('hardware','Electrical / hardware / chips'),('embedded','Embedded / firmware')] %}
@@ -18,11 +20,14 @@
 <p class="muted">Replacing the connection stops automation and revokes the previous connection. No paid API or cloud browser is used.</p>
 <p>Mac launcher: <strong>Start Radar Auto Apply.command</strong><br>Local stop: <strong>Stop Radar Auto Apply.command</strong></p>
 <p>The worker handles supported employer forms. Logins, CAPTCHAs, assessments, unsupported controls, and unclear submissions need your attention. Your Mac must be awake and online. One browser runs at a time; local AI can still use noticeable memory and CPU.</p></section></div>
-<section class="panel"><h2>Application queue</h2>{% for task in tasks %}{% set p=postings[task.posting_id] %}
+<section class="panel"><h2>Application queue · {{total_tasks}}</h2>
+<p>{% for state,count in counts.items() %}{{state.replace('_',' ') | title}}: {{count}}{% if not loop.last %} · {% endif %}{% endfor %}</p>
+{% for task in tasks %}{% set p=postings[task.posting_id] %}
 <article style="padding:16px 0;border-bottom:1px solid var(--border)"><h3><a href="/jobs/{{task.posting_id}}">{{p.company_name}} · {{p.title}}</a></h3><p><strong>{{task.state.replace('_',' ') | title}}</strong> — {{task.detail}}</p>
 {% if task.confirmation %}<p>{{task.confirmation}}</p>{% endif %}
 {% for q in task.questions | fromjson %}<p>Answer needed: {{q}}</p>{% endfor %}
 {% if task.state=='needs_input' %}<form method="post" action="/autopilot/tasks/{{task.id}}/retry"><button class="secondary">Retry with saved answers</button></form>{% endif %}
 {% if task.state in ['needs_input','uncertain'] %}<p><a href="/jobs/{{task.posting_id}}">Open role / record a manual application →</a></p>{% endif %}</article>
-{% else %}<p>Your queue is empty. Connect your Mac, select your resumes, and Start to watch for new matching internships.</p>{% endfor %}</section>
+{% else %}<p>Your queue is empty. Connect your Mac, select your resumes, and Start to watch for new matching internships.</p>{% endfor %}
+{% if queue_pages > 1 %}<nav aria-label="Application queue pages">{% if queue_page > 1 %}<a href="/autopilot?page={{queue_page-1}}">← Previous applications</a>{% endif %} <span>Page {{queue_page}} of {{queue_pages}}</span> {% if queue_page < queue_pages %}<a href="/autopilot?page={{queue_page+1}}">Next applications →</a>{% endif %}</nav>{% endif %}</section>
 {% endblock %}

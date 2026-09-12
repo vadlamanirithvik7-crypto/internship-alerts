@@ -4,9 +4,9 @@ import hashlib
 import hmac
 import json
 import secrets
-from fastapi import APIRouter, Depends, HTTPException, Request, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, Request, BackgroundTasks, Query
 from fastapi.responses import RedirectResponse, Response
-from sqlalchemy import select
+from sqlalchemy import select, func
 from shared.db import AutoApplication, StoredResume, Posting, utcnow
 from shared import auto_apply as queue
 
@@ -18,16 +18,31 @@ def register(owner_app, templates, get_db):
     router = APIRouter(dependencies=[Depends(private)])
 
     @router.get('/autopilot')
-    def page(request: Request, db=Depends(get_db)):
+    def page(request: Request, page: int = Query(1, ge=1), db=Depends(get_db)):
         cfg = queue.settings(db)
         db.commit()
-        tasks = list(db.scalars(select(AutoApplication).order_by(AutoApplication.id.desc()).limit(100)))
+        counts = dict(db.execute(select(AutoApplication.state, func.count()).group_by(AutoApplication.state)).all())
+        total = sum(counts.values())
+        pages = max(1, (total + 49) // 50)
+        page = min(page, pages)
+        tasks = list(db.scalars(select(AutoApplication).order_by(AutoApplication.updated_at.desc(), AutoApplication.id.desc()).offset((page-1)*50).limit(50)))
         return templates.TemplateResponse(request, 'autopilot.html', {
             'config':cfg, 'tasks':tasks,
             'resumes':list(db.scalars(select(StoredResume).where(StoredResume.active.is_(True)))),
             'postings':{t.posting_id:db.get(Posting,t.posting_id) for t in tasks},
             'saved_answers':json.loads(cfg.answers),
+            'counts':counts, 'total_tasks':total, 'queue_page':page, 'queue_pages':pages,
         })
+
+    @router.post('/autopilot/backfill')
+    def backfill(db=Depends(get_db)):
+        cfg = queue.settings(db)
+        try:
+            queue.replenish(db, cfg, include_existing=True)
+        except ValueError as e:
+            raise HTTPException(422, str(e)) from None
+        db.commit()
+        return RedirectResponse('/autopilot', 303)
 
     @router.post('/autopilot/settings')
     async def save(request: Request, db=Depends(get_db)):

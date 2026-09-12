@@ -11,6 +11,7 @@ import re
 import signal
 import socket
 import subprocess
+from functools import partial
 from urllib.parse import urlsplit
 import httpx
 from playwright.async_api import async_playwright
@@ -32,7 +33,7 @@ class Connection:
         r.raise_for_status(); return r.json()
 
 
-async def public_request(route):
+async def public_request(route, employer_url=None):
     url=urlsplit(route.request.url)
     if url.scheme not in ('http','https') or url.username or url.password:
         await route.abort(); return
@@ -43,14 +44,17 @@ async def public_request(route):
     if not safe:
         await route.abort(); return
     # The browser may load public assets, but sends application forms only to supported ATS hosts.
-    if route.request.method not in ('GET','HEAD','OPTIONS') and not supported(route.request.url):
+    if route.request.method not in ('GET','HEAD','OPTIONS') and not supported(route.request.url, employer_url):
         await route.abort(); return
     await route.continue_()
 
 
 async def prepare(page, task, local_ai, model):
-    if not supported(task['url']):
-        return None,['This employer form is not supported yet. Apply on the employer site.']
+    from poller.application_links import is_aggregator
+    if is_aggregator(task['url']):
+        return None,['An exact employer application link is required; this link is a job board.']
+    if not supported(task['url'], task['url']):
+        return None,['This employer application requires a secure HTTPS link.']
     await page.goto(task['url'],wait_until='domcontentloaded',timeout=45000)
     await page.wait_for_timeout(1500)
     body=await page.locator('body').inner_text()
@@ -63,27 +67,87 @@ async def prepare(page, task, local_ai, model):
     identity_text = normalize(body+' '+page.url)
     if not company_words or any(w not in identity_text.split() for w in company_words):
         return None,['Could not confirm the employer identity on the application page.']
-    if re.search(r'verify you are human|complete the captcha|access denied|sign in to your account|create an account to apply',body,re.I):
-        return None,['Employer login or human verification required.']
     from shared.eligibility import restriction_reasons
     restrictions = restriction_reasons(task['title'],body)
     if skip_citizenship(task['answers']) and 'Citizenship / permanent-residency restriction' in restrictions:
         raise CitizenshipDeclined('Skipped: employer requires citizenship or permanent residency. No application was submitted.')
     if restrictions:
         return None,['Employer page lists an eligibility restriction. Review it before applying.']
-    frames=[f for f in page.frames if supported(f.url)]
-    for frame in frames:
-        await check_citizenship(frame, task['answers'])
-    for frame in frames:
-        # Only a real submit control permits this adapter to submit. Multi-step login/application
-        # flows are deliberately handed back until that employer adapter is supported.
-        submit=frame.get_by_role('button',name=re.compile(r'^(submit application|submit your application|send application|apply now)$',re.I))
-        if await submit.count()!=1: continue
-        missing,uploads=await fill_form(frame,task,local_ai,model)
-        if not uploads: missing.append('Could not confirm the resume attachment control')
-        if missing: return None,missing
-        return submit,[]
-    return None,['This employer uses a login or application flow that needs manual completion.']
+    uploads = 0
+    final_names = r'^(submit application|submit your application|send application|submit)$'
+    advance_names = ['Apply manually', 'Apply', 'Apply now', 'Continue application',
+                     'Save and continue', 'Next', 'Continue', 'Review application']
+    for _ in range(10):
+        frames = [f for f in page.frames if supported(f.url, task['url'])]
+        if not frames:
+            return None,['The application moved to another portal that needs manual review.']
+        before = page.url + await page.locator('body').inner_text()
+        for frame in frames:
+            text = await frame.locator('body').inner_text()
+            restrictions = restriction_reasons(task['title'],text)
+            if skip_citizenship(task['answers']) and 'Citizenship / permanent-residency restriction' in restrictions:
+                raise CitizenshipDeclined('Skipped: employer requires citizenship or permanent residency. No application was submitted.')
+            if restrictions:
+                return None,['Employer page lists an eligibility restriction. Review it before applying.']
+            if re.search(r'verify you are human|complete the captcha|access denied',text,re.I):
+                return None,['Employer human verification required.']
+            if await frame.locator('input[type="password"]:visible').count() or await frame.get_by_role('heading',name=re.compile(r'sign in|log in|create (?:an? )?account',re.I)).count():
+                return None,['Employer account login required.']
+            await check_citizenship(frame, task['answers'])
+        finals = []
+        advances = []
+        for frame in frames:
+            submit = frame.get_by_role('button',name=re.compile(final_names,re.I))
+            for index in range(await submit.count()):
+                candidate = submit.nth(index)
+                if await candidate.is_visible(): finals.append((frame,candidate))
+            for priority, name in enumerate(advance_names):
+                for role in ('button','link'):
+                    candidates = frame.get_by_role(role,name=re.compile('^'+re.escape(name)+'$',re.I))
+                    for index in range(await candidates.count()):
+                        candidate = candidates.nth(index)
+                        if await candidate.is_visible(): advances.append((priority,frame,candidate))
+        # Fill application fields on each step; all unknown required answers stop progress.
+        if finals or advances:
+            missing=[]
+            for frame in frames:
+                issues, count = await fill_form(frame,task,local_ai,model)
+                missing.extend(issues); uploads += count
+            if missing: return None,list(dict.fromkeys(missing))
+        if len(finals)==1:
+            if not uploads: return None,['Could not confirm the resume attachment control']
+            return finals[0][1],[]
+        if len(finals)>1:
+            return None,['Multiple submit controls need manual review.']
+        if not advances:
+            return None,['Could not identify the next application step. Open the employer page to continue.']
+        priority = min(item[0] for item in advances)
+        choices = [item for item in advances if item[0]==priority]
+        if len(choices)!=1:
+            return None,['Multiple application controls need manual review.']
+        _, frame, action = choices[0]
+        # Some single-page forms use Apply now as their final submission control.
+        if uploads and (await action.inner_text()).strip().lower() in ('apply','apply now'):
+            return action,[]
+        href = await action.get_attribute('href')
+        if href:
+            from urllib.parse import urljoin
+            target = urljoin(frame.url, href)
+            if not supported(target,task['url']):
+                return None,['This application links to another portal that needs manual review.']
+            await page.goto(target,wait_until='domcontentloaded',timeout=45000)
+        else:
+            pages = list(page.context.pages)
+            await action.click(timeout=8000)
+            await page.wait_for_timeout(1500)
+            opened = [p for p in page.context.pages if p not in pages]
+            if opened:
+                page = opened[-1]
+                await page.wait_for_load_state('domcontentloaded',timeout=15000)
+        await page.wait_for_timeout(1000)
+        if before == page.url + await page.locator('body').inner_text():
+            return None,['The employer did not advance to another step. Review the form or validation messages.']
+    return None,['This application needs more steps than the worker can complete in one attempt.']
 
 
 async def watch(connection, task, browser, halted):
@@ -108,7 +172,7 @@ async def execute(connection, task, playwright, model):
     confirmation_pattern = r'(?:your application (?:has been|was) (?:successfully )?(?:submitted|received)|thank you for (?:applying|your application)|application submitted successfully)'
     try:
         context=await browser.new_context(service_workers='block',accept_downloads=False)
-        await context.route('**/*',public_request)
+        await context.route('**/*',partial(public_request, employer_url=task['url']))
         page=await context.new_page()
         page.set_default_timeout(6000)
         async with httpx.AsyncClient() as local_ai:
@@ -117,8 +181,9 @@ async def execute(connection, task, playwright, model):
         if not submit:
             await connection.call('result',task,state='needs_input',questions=questions,detail='Needs your input before submission.')
             return
+        page = submit.page
         for frame in page.frames:
-            if supported(frame.url) and re.search(confirmation_pattern, await frame.locator('body').inner_text(), re.I):
+            if supported(frame.url,task['url']) and re.search(confirmation_pattern, await frame.locator('body').inner_text(), re.I):
                 await connection.call('result',task,state='needs_input',detail='Existing confirmation text makes automatic submission ambiguous.',questions=[])
                 return
         permit=await connection.call('permit',task)
@@ -130,7 +195,7 @@ async def execute(connection, task, playwright, model):
         for _ in range(20):
             if halted.is_set(): break
             for frame in page.frames:
-                if not supported(frame.url): continue
+                if not supported(frame.url,task['url']): continue
                 text=await frame.locator('body').inner_text()
                 match=re.search(confirmation_pattern,text,re.I)
                 if match: confirmation=match.group(0); break
@@ -139,7 +204,8 @@ async def execute(connection, task, playwright, model):
         await connection.call('result',task,state='submitted' if confirmation else 'uncertain',confirmation=confirmation or '')
     except CitizenshipDeclined as exc:
         if not started and not halted.is_set() and not STOP.is_set():
-            await connection.call('result',task,state='cancelled',detail=str(exc),questions=[])
+            with contextlib.suppress(Exception):
+                await connection.call('result',task,state='cancelled',detail=str(exc),questions=[])
     except Exception:
         # Never log applicant data, URLs containing secrets, or page contents.
         with contextlib.suppress(Exception):

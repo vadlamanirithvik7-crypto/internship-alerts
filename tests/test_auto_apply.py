@@ -109,7 +109,7 @@ def test_headless_form_receipt_and_pause_gate(monkeypatch):
         async def call(self,action,task=None,**data):
             self.calls.append((action,data))
             return {'allowed':self.allowed if action=='permit' else True,'mode':'running'}
-    async def fixture_route(route):
+    async def fixture_route(route, **kwargs):
         await route.fulfill(status=200,content_type='text/html',body=html)
     monkeypatch.setattr(worker,'public_request',fixture_route)
     task={'id':1,'claim_token':'x','url':'https://jobs.lever.co/fixture/1','title':'Software Engineering Intern',
@@ -180,7 +180,7 @@ def test_citizenship_question_cancels_before_permit(monkeypatch, form):
         def __init__(self): self.calls=[]
         async def call(self,action,task=None,**data):
             self.calls.append((action,data)); return {'allowed':True,'mode':'running'}
-    async def fixture_route(route):
+    async def fixture_route(route, **kwargs):
         await route.fulfill(status=200,content_type='text/html',body=html)
     monkeypatch.setattr(worker,'public_request',fixture_route)
     task={'id':1,'claim_token':'x','url':'https://jobs.lever.co/fixture/1',
@@ -194,3 +194,113 @@ def test_citizenship_question_cancels_before_permit(monkeypatch, form):
             assert receipts[-1]['state']=='cancelled'
             assert 'answer is No' in receipts[-1]['detail']
     asyncio.run(check())
+
+
+def test_backfill_before_start_skips_history_and_prioritizes_new(db):
+    p,r,cfg=setup(db)
+    cfg.mode='stopped';cfg.started_at=None
+    p.first_seen_at=utcnow()-timedelta(days=10)
+    def posting(company, **values):
+        row=Posting(company_name=company,title='Software Engineering Intern Summer 2027',
+                    location='Austin, TX',url=f'https://jobs.lever.co/{company}/123',
+                    source='test',raw_hash=company,target_eligible=True,
+                    first_seen_at=utcnow()-timedelta(days=5))
+        for key,value in values.items(): setattr(row,key,value)
+        db.add(row);return row
+    blocked=[posting('closed',closed_at=utcnow()),posting('applied',status='applied',applied_at=utcnow()),
+             posting('dismissed',status='not_interested'),posting('excluded',target_eligible=False)]
+    db.flush()
+    queue.replenish(db,cfg,include_existing=True)
+    queue.replenish(db,cfg,include_existing=True)
+    tasks=list(db.scalars(select(AutoApplication)))
+    assert len(tasks)==1 and tasks[0].posting_id==p.id
+    assert cfg.started_at is None and cfg.mode=='stopped'
+    assert queue.claim(db,cfg) is None
+    queue.control(db,cfg,'running'); cutoff=cfg.started_at
+    new=posting('newest',first_seen_at=utcnow()+timedelta(seconds=1));db.flush()
+    queue.replenish(db,cfg,include_existing=True)
+    assert cfg.started_at==cutoff
+    assert queue.claim(db,cfg).posting_id==new.id
+    assert all(t.posting_id not in [b.id for b in blocked] for t in db.scalars(select(AutoApplication)))
+
+
+def test_backfill_owner_action_and_queue_pagination(client, monkeypatch):
+    c,m,Session=client
+    with Session() as db:
+        p,r,cfg=setup(db);cfg.mode='paused';p.first_seen_at=utcnow()-timedelta(days=30)
+        for other in db.scalars(select(Posting).where(Posting.id != p.id)):
+            other.target_eligible=False
+        db.commit()
+    monkeypatch.setenv('ADMIN_PASSWORD','private')
+    assert c.post('/autopilot/backfill').status_code==401
+    response=c.post('/autopilot/backfill',auth=('owner','private'))
+    assert response.status_code==200 and 'Application queue · 1' in response.text
+    with Session() as db:
+        cfg=queue.settings(db)
+        assert cfg.mode=='paused'
+        task=db.scalar(select(AutoApplication))
+        for index in range(51):
+            row=Posting(company_name=f'Company {index}',title='Software Engineering Intern',
+                        location='Austin, TX',url=f'https://example.com/{index}',source='test',raw_hash=f'page-{index}',first_seen_at=utcnow())
+            db.add(row);db.flush()
+            db.add(AutoApplication(posting_id=row.id,resume_id=task.resume_id,
+                   application_key=f'test-{index}',target_url=task.target_url,
+                   applicant=task.applicant,answers=task.answers,state='cancelled'))
+        db.commit()
+    page=c.get('/autopilot',auth=('owner','private'))
+    assert 'Page 1 of 2' in page.text and 'Application queue · 52' in page.text
+    assert 'Page 2 of 2' in c.get('/autopilot?page=2',auth=('owner','private')).text
+    assert c.get('/autopilot?page=0',auth=('owner','private')).status_code==422
+
+
+@pytest.mark.parametrize('review,permit,expected', [
+    ('', True, 'submitted'),
+    ('', False, None),
+    ('<label>What is your CPT start date?<input required></label>', True, 'needs_input'),
+    ('<label>Are you a US citizen?<select><option>Yes</option><option>No</option></select></label>', True, 'cancelled'),
+])
+def test_custom_employer_multi_step_application(monkeypatch, review, permit, expected):
+    import asyncio
+    from playwright.async_api import async_playwright
+    from applicant import worker
+    from applicant.forms import SKIP_CITIZENSHIP
+    from test_applying import pdf_bytes
+    posts=[]
+    async def fixture_route(route, **kwargs):
+        path=__import__('urllib.parse',fromlist=['urlsplit']).urlsplit(route.request.url).path
+        if route.request.method=='POST': posts.append(path)
+        pages={
+            '/job':'<h1>Fixture Software Engineering Intern</h1><a href="/apply">Apply</a>',
+            '/apply':'<form action="/review" method="post" enctype="multipart/form-data"><label>First name<input name="first" required></label><label>Email<input name="email" type="email" required></label><label>Resume<input name="resume" type="file" required></label><button>Next</button></form>',
+            '/review':'<form action="/receipt" method="post">'+review+'<button>Submit application</button></form>',
+            '/receipt':'Your application has been received',
+        }
+        await route.fulfill(status=200,content_type='text/html',body=pages.get(path,''))
+    monkeypatch.setattr(worker,'public_request',fixture_route)
+    class Fake:
+        def __init__(self): self.calls=[]
+        async def call(self,action,task=None,**data):
+            self.calls.append((action,data));return {'allowed':permit if action=='permit' else True,'mode':'running'}
+    task={'id':1,'claim_token':'x','url':'https://careers.fixture.example/job',
+          'title':'Software Engineering Intern','company':'Fixture',
+          'profile':{'first_name':'Test','email':'test@example.com'},
+          'answers':{SKIP_CITIZENSHIP:'Yes'},'filename':'resume.pdf','resume':base64.b64encode(pdf_bytes()).decode()}
+    async def check():
+        async with async_playwright() as p:
+            connection=Fake();await worker.execute(connection,task,p,'')
+            results=[data for action,data in connection.calls if action=='result']
+            assert '/review' in posts
+            assert ('/receipt' in posts)==(expected=='submitted')
+            if expected: assert results[-1]['state']==expected
+            if expected in ('needs_input','cancelled'):
+                assert not any(action=='permit' for action,_ in connection.calls)
+    asyncio.run(check())
+
+
+def test_custom_form_origin_is_scoped():
+    employer='https://careers.employer.example/job'
+    assert supported('https://careers.employer.example/submit',employer)
+    assert not supported('https://other.example/submit',employer)
+    assert not supported('http://careers.employer.example/submit',employer)
+    assert not supported('https://careers.employer.example:444/submit',employer)
+    assert not supported('https://user:pass@careers.employer.example/submit',employer)
