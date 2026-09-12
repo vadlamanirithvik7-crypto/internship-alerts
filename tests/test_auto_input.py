@@ -89,3 +89,65 @@ def test_structured_options_and_request_budget():
     with pytest.raises(ValueError): validate_questions([{'label':'Country','options':[{'bad':1}]}])
     big=pack_questions([f'Question {i}' for i in range(80)],{f'Question {i}':['a'*299]*300 for i in range(80)})
     assert len(json.dumps(big).encode())<=50000 and len(big)==80
+
+
+def test_inline_api_returns_questions_and_queues_answers_without_navigation(client):
+    c,_,Session=client
+    with Session() as db:
+        tid,pid,rid=waiting_task(db,[{'label':'Country?','options':['United States','Canada']},
+                                   'Could not identify the next application step.'])
+    data=c.get('/autopilot/activity').json()
+    assert data['answer_count']==1 and data['answer_ids']==[tid]
+    attention=data['attention'][0]
+    assert attention['fields']==[{'label':'Country?','options':['United States','Canada']}]
+    assert attention['blockers']==['Could not identify the next application step.']
+    assert 'answers' not in attention and 'applicant' not in attention
+    headers={'Accept':'application/json'}
+    bad=c.post(f'/autopilot/tasks/{tid}/answers',headers=headers,
+               data={'version':attention['version'],'answer_0':'Invalid'})
+    assert bad.status_code==422 and 'listed options' in bad.json()['detail']
+    result=c.post(f'/autopilot/tasks/{tid}/answers',headers=headers,
+                  data={'version':attention['version'],'answer_0':'United States'})
+    assert result.status_code==200 and result.json()['state']=='queued'
+    assert not result.history
+    assert c.get('/autopilot/activity').json()['attention']==[]
+    with Session() as db:
+        task=queue.claim(db,queue.settings(db))
+        assert task.id==tid and task.resume_id==rid and task.state=='running'
+        assert json.loads(task.answers)['Country?']=='United States'
+        assert task.submitted_at is None
+
+
+def test_phone_inline_answers_survive_polling_and_continue_in_place(client):
+    from test_apply_navigation import local_app
+    pw=pytest.importorskip('playwright.sync_api')
+    c,_,Session=client
+    with Session() as db:
+        tid,_,_=waiting_task(db,['Earliest start date?'])
+    with local_app(client[1].app) as origin, pw.sync_playwright() as runtime:
+        browser=runtime.chromium.launch()
+        page=browser.new_page(viewport={'width':390,'height':844},is_mobile=True,has_touch=True)
+        page.goto(origin+'/autopilot')
+        field=page.locator('#worker-questions').get_by_label('Earliest start date?',exact=True)
+        field.fill('June 1, 2027')
+        with page.expect_response('**/autopilot/activity'):
+            pass
+        assert field.input_value()=='June 1, 2027'
+        assert field.evaluate('(node) => node === document.activeElement')
+        assert page.locator('#worker-counts').inner_text().find('Confirmed submissions: 0')>=0
+        # Exercise inline server error without replacing the user's draft.
+        def reject_once(route):
+            route.fulfill(status=422,content_type='application/json',body='{"detail":"Please review this answer."}')
+            page.unroute('**/answers',reject_once)
+        page.route('**/answers',reject_once)
+        page.get_by_role('button',name='Save and continue',exact=True).click()
+        pw.expect(page.locator('#worker-questions')).to_contain_text('Please review this answer.')
+        assert field.input_value()=='June 1, 2027' and page.url==origin+'/autopilot'
+        page.get_by_role('button',name='Save and continue',exact=True).click()
+        pw.expect(page.locator('#answers-result')).to_contain_text('Answers saved.')
+        assert page.url==origin+'/autopilot'
+        pw.expect(page.locator('#worker-questions form')).to_have_count(0)
+        browser.close()
+    with Session() as db:
+        task=db.get(AutoApplication,tid)
+        assert task.state=='queued' and json.loads(task.answers)['Earliest start date?']=='June 1, 2027'

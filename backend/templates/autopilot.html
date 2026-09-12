@@ -2,6 +2,14 @@
 {% block title %}Auto apply · Radar{% endblock %}
 {% block content %}
 <div class="page-heading"><div><span class="eyebrow">YOUR MAC, WORKING IN THE BACKGROUND</span><h1>Auto apply</h1><p>A separate background browser works through your queued internships and new matches. Your mouse, keyboard, and normal browser stay yours.</p></div></div>
+<section class="panel" id="application-questions" aria-labelledby="questions-heading">
+<h2 id="questions-heading">Questions waiting for you</h2>
+<p>Answer the employer’s questions here, then press Save and continue. Your Mac will retry the application with your answers and selected resume. It is marked Applied only after employer confirmation.</p>
+<p id="questions-summary">Loading unanswered questions…</p>
+<p id="answers-result" role="status"></p>
+<div id="worker-questions"></div>
+<noscript><p>Enable JavaScript to answer here, or use Answer questions in the application queue below.</p></noscript>
+</section>
 <section class="panel"><h2 id="worker-mode">Worker: {{config.mode | title}}</h2><p id="worker-connection">Last connected: {{config.last_seen_at or 'Not connected yet'}}{% if config.last_seen_at %} UTC{% endif %}.</p>
 <form action="/autopilot/control" method="post" class="assistant-links"><button name="mode" value="running">Start / Resume</button><button name="mode" value="paused" class="secondary">Pause</button><button name="mode" value="stopped" class="secondary">Stop</button></form>
 <p class="muted">Pause keeps your queue. Stop also tells the local worker to exit and close its browser. Controls reach an online worker within a few seconds. An application already sent cannot be withdrawn; uncertain submissions will not retry automatically.</p>
@@ -13,7 +21,7 @@
 <div id="worker-current"></div><p id="worker-counts"></p>
 <h3>Recent activity</h3><div id="worker-recent"><p>No activity loaded yet.</p></div>
 <p class="muted" id="worker-updated">Updates automatically every 3 seconds while this page is open.</p></section>
-<script src="/static/worker-activity.js?v=answers-1" defer></script>
+<script src="/static/worker-activity.js?v=inline-answers-2" defer></script>
 <div class="assistant-grid"><section class="panel"><h2>Choose your resumes</h2><p><a href="/apply-settings">Upload PDFs and save your contact details →</a></p>
 <form action="/autopilot/settings" method="post" class="assistant-form">
 {% for role,label in [('software','Software engineering'),('hardware','Electrical / hardware / chips'),('embedded','Embedded / firmware')] %}
@@ -29,11 +37,11 @@
 <section class="panel"><h2>Application queue · {{total_tasks}}</h2>
 <p>{% for state,count in counts.items() %}{{'Needs attention' if state=='needs_input' else state.replace('_',' ') | title}}: {{count}}{% if not loop.last %} · {% endif %}{% endfor %}</p>
 {% for task in tasks %}{% set p=postings[task.posting_id] %}{% set view=task_views[task.id] %}
-<article style="padding:16px 0;border-bottom:1px solid var(--border)"><h3><a href="/autopilot/tasks/{{task.id}}">{{p.company_name}} · {{p.title}}</a></h3><p><strong>{{view.label}}</strong> — {{task.detail}}</p>
+<article style="padding:16px 0;border-bottom:1px solid var(--border)"><h3><a href="/autopilot/tasks/{{task.id}}">{{p.company_name}} · {{p.title}}</a></h3><p><strong>{{view.label}}</strong> — {% if task.state=='needs_input' %}{{'Answer the employer questions above.' if view.fields else 'Employer-site issue; no answer to enter here.'}}{% else %}{{task.detail}}{% endif %}</p>
 {% if task.confirmation %}<p>{{task.confirmation}}</p>{% endif %}
 {% for field in view.fields %}<p>Answer needed: {{field.label}}</p>{% endfor %}
 {% for reason in view.blockers %}<p>Review needed: {{reason}}</p>{% endfor %}
-{% if task.state=='needs_input' %}<a class="button secondary" href="/autopilot/tasks/{{task.id}}">{{view.action}}</a>{% endif %}
+{% if task.state=='needs_input' %}<a class="button secondary" href="{{'#application-questions' if view.fields else '/autopilot/tasks/' ~ task.id}}">{{view.action}}</a>{% endif %}
 {% if task.state in ['needs_input','uncertain'] %}<p><a href="/jobs/{{task.posting_id}}">Open role / record a manual application →</a></p>{% endif %}</article>
 {% else %}<p>Your queue is empty. Connect your Mac, select your resumes, and Start to watch for new matching internships.</p>{% endfor %}
 {% if queue_pages > 1 %}<nav aria-label="Application queue pages">{% if queue_page > 1 %}<a href="/autopilot?page={{queue_page-1}}">← Previous applications</a>{% endif %} <span>Page {{queue_page}} of {{queue_pages}}</span> {% if queue_page < queue_pages %}<a href="/autopilot?page={{queue_page+1}}">Next applications →</a>{% endif %}</nav>{% endif %}</section>
