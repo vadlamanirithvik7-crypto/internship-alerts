@@ -4,6 +4,7 @@ import re
 from urllib.parse import urlsplit
 import httpx
 from shared.employer_questions import greenhouse_questions_url, schema_questions, discovery_answer
+from shared.profile_answers import known_answer, match_option, resolved_answer
 
 SUPPORTED = ('greenhouse.io', 'lever.co', 'myworkdayjobs.com', 'ashbyhq.com', 'careerpuck.com')
 SENSITIVE = re.compile(r'citizen|sponsor|authoriz|visa|disabil|gender|race|ethnic|veteran|certif|consent|agree|signature|criminal|convict|assessment|test question', re.I)
@@ -53,6 +54,8 @@ def normalize(value):
 
 
 def answer_for(label, profile, answers):
+    known=known_answer(label,profile,answers)
+    if known is not None: return known
     label = normalize(label)
     explicit = {normalize(k):v for k,v in answers.items()}
     if label in explicit:
@@ -155,6 +158,8 @@ async def fill_form(frame, task, client, model=''):
         if question and kind not in ('file','password'):
             task.setdefault('_question_fields',{})[question]=[option[:300] for option in options[:300]]
         value=answer_for(question,task['profile'],task['answers'])
+        if options:
+            value=resolved_answer(question,options,task['profile'],task['answers']) or value
         referral=discovery_answer(question,options,task['answers'])
         if value is None: value=referral
         if referral_other and normalize(question)=='if other please specify':
@@ -177,15 +182,21 @@ async def fill_form(frame, task, client, model=''):
             elif kind=='radio':
                 if normalize(label)==normalize(str(value)): await el.check()
             elif kind in ('select-one','select-multiple'):
-                choices=[o for o in f['options'] if normalize(o)==normalize(str(value))]
-                if len(choices)!=1: missing.append(question+' (choose an exact option)')
-                else: await el.select_option(label=choices[0])
+                selected=match_option(question,value,f['options'])
+                if selected is None: missing.append(question+' (choose an exact option)')
+                else: await el.select_option(label=selected)
             elif combo:
-                choices=[o for o in options if normalize(o)==normalize(str(value)) or
-                         (normalize(question)=='country' and normalize(re.sub(r'\s*\+\d+$','',o))==normalize(str(value)))]
-                if options and len(choices)!=1:
+                selected=match_option(question,value,options)
+                if selected is None and not schema.get(normalize(question)) and await el.get_attribute('readonly') is None:
+                    # Searchable school lists may load only a small initial page.
+                    await el.click();await el.fill(str(value))
+                    await frame.get_by_role('option').first.wait_for(state='visible',timeout=2500)
+                    options=await frame.get_by_role('option').all_text_contents()
+                    task.setdefault('_question_fields',{})[question]=options[:300]
+                    selected=match_option(question,value,options)
+                if options and selected is None:
                     missing.append(question+' (choose an exact option)'); continue
-                selected=choices[0] if choices else str(value)
+                selected=selected or str(value)
                 await el.click()
                 if await el.get_attribute('readonly') is None: await el.fill(str(value))
                 option=frame.get_by_role('option',name=selected,exact=True)

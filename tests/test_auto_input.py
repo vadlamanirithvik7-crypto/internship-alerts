@@ -211,8 +211,11 @@ def test_metadata_refresh_merges_options_and_preserves_partial_draft(client,monk
     assert result.status_code==200
     attention=c.get('/autopilot/activity').json()['attention'][0]
     assert attention['fields'][0]['options']==['Choice A','Choice B']
-    assert attention['values'][:2]==['Unclear draft','My university']
-    with Session() as db: assert db.get(AutoApplication,tid).state=='needs_input'
+    assert attention['values'][0]=='Unclear draft'
+    assert not any(f['label']=='School*' for f in attention['fields'])
+    with Session() as db:
+        assert db.get(AutoApplication,tid).state=='needs_input'
+        assert json.loads(db.get(AutoApplication,tid).answers)['School*']=='My university'
 
 
 def test_batch_retry_preserves_specific_answers_and_submission_guards(client):

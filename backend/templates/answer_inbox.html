@@ -1,0 +1,27 @@
+{% extends 'base.html' %}
+{% block title %}Shared answers · Radar{% endblock %}
+{% block content %}
+<a class="back-link" href="/autopilot">← Back to Auto apply</a>
+<div class="page-heading"><div><h1>Answer once</h1><p>Your profile and unanswered questions from every waiting application, together.</p></div></div>
+{% if saved %}<section class="panel" role="status">Your answers are saved for future applications. {{queued}} applications were queued to continue.</section>{% endif %}
+<form action="/autopilot/answers" method="post" class="assistant-form">
+<section class="panel"><h2>Your reusable details</h2><p>These details fill equivalent questions automatically. Blank fields leave saved information unchanged. Changes apply when the worker starts the next application.</p>
+<div class="assistant-grid">
+{% for key,label in profile_fields.items() %}<label><span>{{label}}</span><input name="profile_{{key}}" value="{{values[key]}}" maxlength="300" {% if key in ['linkedin','github'] %}type="url"{% elif key=='email' %}type="email"{% else %}type="text"{% endif %}></label>{% endfor %}
+</div><button>Save shared answers and continue</button></section>
+<section class="panel"><h2>Remaining questions · {{inbox.groups | length}}</h2>
+<p>{{inbox.known}} question occurrences already have saved answers and are omitted below. Answer any of the remaining questions; you can save without completing every one.</p>
+{% for group in inbox.groups %}
+<article style="padding:18px 0;border-bottom:1px solid var(--border)">
+{% if group.saved %}<p>Saved information: <strong>{{group.saved}}</strong>. This employer uses different choices; select the matching category below.</p>{% endif %}
+<label><span>{{group.label}}</span>
+{% if group.options %}<select name="q_{{group.id}}"><option value="">Choose an answer</option>{% for option in group.options %}<option value="{{option}}">{{option}}</option>{% endfor %}</select>
+{% else %}<textarea name="q_{{group.id}}" rows="2" maxlength="1500"></textarea>{% endif %}</label>
+{% if group.options and group.options | join('') | length > 220 %}<details><summary>Read full answer choices</summary><ul>{% for option in group.options %}<li>{{option}}</li>{% endfor %}</ul></details>{% endif %}
+<details><summary>Used by {{group.entries | length}} application{{'s' if group.entries | length != 1 else ''}}</summary><ul>{% for entry in group.entries %}<li>{{entry.company}} · {{entry.title}}</li>{% endfor %}</ul></details>
+</article>
+{% else %}<p>No unanswered questions remain among the currently waiting applications. New employer questions will appear here when the worker encounters them.</p>{% endfor %}
+<button>Save shared answers and continue</button>
+</section></form>
+<section class="panel"><h2>Employer-site issues</h2><p>{{inbox.issues}} applications also need a browser, attachment, sign-in, or other employer-site issue resolved. Saved facts are retained; these issues do not ask you to re-enter your profile.</p><a href="/autopilot">View worker activity and employer issues →</a></section>
+{% endblock %}

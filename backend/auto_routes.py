@@ -8,10 +8,13 @@ from datetime import timedelta
 from fastapi import APIRouter, Depends, HTTPException, Request, BackgroundTasks, Query
 from fastapi.responses import RedirectResponse, Response, JSONResponse
 from sqlalchemy import select, func
-from shared.db import AutoApplication, AutoApplySettings, StoredResume, Posting, utcnow
+from shared.db import AutoApplication, AutoApplySettings, StoredResume, Posting, ApplicantSettings, utcnow
 from shared import auto_apply as queue
 from shared.auto_input import question_view
 from shared.employer_questions import greenhouse_questions_url, schema_questions, refresh_questions, question_key, SOURCE_KEY, discovery_answer
+from shared.profile_answers import FIELDS as SHARED_FIELDS, PREFIX, profile_values, combined_answers
+from shared.answer_inbox import task_view as shared_task_view, inbox
+from shared.applying import resume_profile_links, validate_profile
 
 PHASES = {'opening':'Opening employer application', 'checking':'Checking requirements',
           'filling':'Filling saved details and attaching your resume', 'advancing':'Moving to the next step',
@@ -25,9 +28,82 @@ def register(owner_app, templates, get_db):
             raise HTTPException(404)
     router = APIRouter(dependencies=[Depends(private)])
 
+    def current_profile(db):
+        row=db.get(ApplicantSettings,1)
+        profile=json.loads(row.data) if row else {}
+        if not profile.get('github') or not profile.get('linkedin'):
+            for resume in db.scalars(select(StoredResume).where(StoredResume.active.is_(True))):
+                for key,value in resume_profile_links(resume.content).items():
+                    if not profile.get(key): profile[key]=value
+        return profile
+
+    def view_for(db,task,cfg=None):
+        cfg=cfg or queue.settings(db)
+        return shared_task_view(task,current_profile(db),json.loads(cfg.answers))
+
+    def inbox_data(db,cfg):
+        tasks=list(db.scalars(select(AutoApplication).where(AutoApplication.state=='needs_input',AutoApplication.submission_started_at.is_(None))))
+        postings={p.id:p for p in db.scalars(select(Posting).where(Posting.id.in_([t.posting_id for t in tasks])))}
+        profile=current_profile(db)
+        return inbox(tasks,postings,profile,json.loads(cfg.answers)),tasks,profile
+
+    @router.get('/autopilot/answers')
+    def answer_inbox(request:Request,db=Depends(get_db)):
+        cfg=queue.settings(db);data,tasks,profile=inbox_data(db,cfg);db.commit()
+        return templates.TemplateResponse(request,'answer_inbox.html',{
+            'inbox':data,'profile_fields':SHARED_FIELDS,'values':profile_values(profile,json.loads(cfg.answers)),
+            'saved':request.query_params.get('saved'),'queued':request.query_params.get('queued','0')})
+
+    @router.post('/autopilot/answers')
+    async def save_inbox(request:Request,db=Depends(get_db)):
+        cfg=queue.settings(db);data,tasks,profile=inbox_data(db,cfg);form=await request.form()
+        shared=json.loads(cfg.answers)
+        for key in SHARED_FIELDS:
+            value=str(form.get('profile_'+key,'')).strip()
+            if len(value)>300: raise HTTPException(422,'Keep profile fields under 300 characters.')
+            if not value: continue
+            if key in ('github','linkedin') and not value.startswith('https://'):
+                raise HTTPException(422,'Profile links must start with https://.')
+            if key=='gpa':
+                try: valid=0<=float(value)<=4
+                except ValueError: valid=False
+                if not valid: raise HTTPException(422,'Enter a GPA from 0 to 4.')
+            shared[PREFIX+key]=value
+            if key in ('first_name','last_name','email','phone','github','linkedin'): profile[key]=value
+        for group in data['groups']:
+            value=str(form.get('q_'+group['id'],'')).strip()
+            if not value: continue
+            if len(value)>1500 or (group['options'] and value not in group['options']):
+                raise HTTPException(422,'Choose an exact employer option and keep answers under 1,500 characters.')
+            if group['reusable']:
+                for entry in group['entries']: shared[entry['label']]=value
+        if len(shared)>1000: raise HTTPException(422,'The saved-answer library is full.')
+        cfg.answers=json.dumps(shared)
+        row=db.get(ApplicantSettings,1)
+        if row:
+            stored=json.loads(row.data)
+            stored.update({k:profile[k] for k in ('first_name','last_name','email','phone','github','linkedin') if profile.get(k)})
+            try: row.data=json.dumps(validate_profile(stored))
+            except ValueError as e: raise HTTPException(422,str(e)) from None
+        queued=0
+        for task in tasks:
+            task.answers=json.dumps(combined_answers(json.loads(task.answers),shared))
+            # Apply the answers explicitly supplied to every matching waiting task.
+            updates={entry['label']:str(form['q_'+group['id']]).strip() for group in data['groups']
+                     if str(form.get('q_'+group['id'],'')).strip() for entry in group['entries'] if entry['task_id']==task.id}
+            task.answers=json.dumps({**json.loads(task.answers),**updates})
+            view=shared_task_view(task,profile,shared)
+            if (view['resolved'] or view['known_issues']) and not view['fields']:
+                task.answers=json.dumps({**json.loads(task.answers),**view['resolved'],**view['known_issues']})
+                task.state='queued';task.questions='[]';task.claim_token=None;task.updated_at=utcnow()
+                task.detail='Shared answers saved. Waiting for your Mac.';queued+=1
+        db.commit()
+        return RedirectResponse(f'/autopilot/answers?saved=1&queued={queued}',303)
+
     @router.get('/autopilot/activity')
     def activity(question_limit: int = Query(20, ge=1, le=1000), db=Depends(get_db)):
         cfg=db.get(AutoApplySettings,1) or queue.settings(db)
+        profile=current_profile(db);shared=json.loads(cfg.answers)
         now=utcnow()
         counts=dict(db.execute(select(AutoApplication.state,func.count()).group_by(AutoApplication.state)).all())
         active=db.scalar(select(AutoApplication).where(AutoApplication.state.in_(['running','submitting'])).order_by(AutoApplication.claimed_at.desc()).limit(1))
@@ -36,7 +112,7 @@ def register(owner_app, templates, get_db):
         for task, posting in db.execute(select(AutoApplication, Posting).join(Posting, Posting.id==AutoApplication.posting_id).where(
                 AutoApplication.state=='needs_input', AutoApplication.submission_started_at.is_(None)
             ).order_by(AutoApplication.updated_at.desc(),AutoApplication.id.desc())):
-            view=question_view(task)
+            view=shared_task_view(task,profile,shared)
             if not view['fields']:
                 manual_count+=1
                 continue
@@ -50,7 +126,7 @@ def register(owner_app, templates, get_db):
         def item(task):
             if not task: return None
             posting=db.get(Posting,task.posting_id)
-            view=question_view(task)
+            view=shared_task_view(task,profile,shared)
             return {'id':task.id,'posting_id':task.posting_id,'company':posting.company_name,
                     'title':posting.title,'state':task.state,
                     'detail': ('Answer the employer questions below.' if view['fields'] else 'Employer-site issue; no answer to enter here.') if task.state=='needs_input' else task.detail,
@@ -81,11 +157,11 @@ def register(owner_app, templates, get_db):
             'postings':{t.posting_id:db.get(Posting,t.posting_id) for t in tasks},
             'saved_answers':json.loads(cfg.answers),
             'counts':counts, 'total_tasks':total, 'queue_page':page, 'queue_pages':pages,
-            'task_views':{t.id:question_view(t) for t in tasks},
+            'task_views':{t.id:view_for(db,t,cfg) for t in tasks},
         })
 
     def task_page(request, db, task, error=None, values=None):
-        view=question_view(task)
+        view=view_for(db,task)
         answers=json.loads(task.answers or '{}')
         return templates.TemplateResponse(request,'auto_task.html',{
             'task':task,'posting':db.get(Posting,task.posting_id),'view':view,
@@ -111,25 +187,25 @@ def register(owner_app, templates, get_db):
         task=db.scalar(select(AutoApplication).where(AutoApplication.id==task_id).with_for_update())
         if not task or task.state!='needs_input' or task.submission_started_at:
             raise HTTPException(409,'This application is no longer waiting for answers. Reload its task page.')
-        view=question_view(task); form=await request.form()
+        view=view_for(db,task,cfg); form=await request.form()
         if form.get('version')!=view['version']:
             raise HTTPException(409,'The questions changed. Reload this task page before answering.')
         values=[str(form.get(f'answer_{i}','')).strip() for i in range(len(view['fields']))]
         error=None
-        if not view['fields']: error='This is an employer-site issue. Use the manual review instructions below.'
+        if not view['fields'] and not view['resolved']: error='This is an employer-site issue. Use the manual review instructions below.'
         elif any(not value or len(value)>1500 for value in values): error='Answer each question using at most 1,500 characters.'
         elif any(field['options'] and value not in field['options'] for field,value in zip(view['fields'],values)):
             error='Choose one of the employer’s listed options for each dropdown.'
         if error:
             response=invalid(error,values);db.commit();return response
-        updates={field['label']:value for field,value in zip(view['fields'],values)}
+        updates={**view['resolved'],**{field['label']:value for field,value in zip(view['fields'],values)}}
         answers=json.loads(task.answers or '{}');answers.update(updates)
         task.answers=json.dumps(answers)
         if form.get('remember')=='yes':
             saved=json.loads(cfg.answers);saved.update(updates)
-            if len(saved)>100:
+            if len(saved)>1000:
                 db.rollback()
-                return invalid('Your saved-answer library has reached 100 questions. Uncheck remember to answer only this application.',values)
+                return invalid('Your saved-answer library has reached 1,000 questions. Uncheck remember to answer only this application.',values)
             cfg.answers=json.dumps(saved)
         task.state='queued';task.claim_token=None;task.questions='[]';task.updated_at=utcnow()
         task.detail='Answers saved. Waiting for your Mac to retry this application.'
@@ -145,7 +221,7 @@ def register(owner_app, templates, get_db):
         task=db.scalar(select(AutoApplication).where(AutoApplication.id==task_id).with_for_update())
         if not task or task.state!='needs_input' or task.submission_started_at:
             raise HTTPException(409,'Only unsubmitted applications waiting for input can refresh questions.')
-        view=question_view(task);form=await request.form()
+        view=view_for(db,task,cfg);form=await request.form()
         if form.get('version')!=view['version']: raise HTTPException(409,'Questions changed. Reload before refreshing.')
         url=greenhouse_questions_url(task.target_url)
         if not url: raise HTTPException(422,'This employer does not provide supported question metadata.')
@@ -217,7 +293,7 @@ def register(owner_app, templates, get_db):
                 if not key.strip() or not value.strip() or len(key)>300 or len(value)>1500:
                     raise ValueError('Use Question = Answer, one per line.')
                 answers[key.strip()] = value.strip()
-            if len(answers)>100: raise ValueError('Use at most 100 saved answers.')
+            if len(answers)>1000: raise ValueError('Use at most 1,000 saved answers.')
             cfg.answers = json.dumps(answers)
         except (ValueError, TypeError) as e:
             raise HTTPException(422,str(e)) from None
@@ -272,6 +348,8 @@ def register(owner_app, templates, get_db):
                 result['task']=None
                 if task:
                     p=db.get(Posting,task.posting_id); r=db.get(StoredResume,task.resume_id)
+                    task.applicant=json.dumps(current_profile(db))
+                    task.answers=json.dumps(combined_answers(json.loads(task.answers),json.loads(cfg.answers)))
                     result['task']={'id':task.id,'claim_token':task.claim_token,'url':task.target_url,
                         'title':p.title,'company':p.company_name,'profile':json.loads(task.applicant),
                         'answers':json.loads(task.answers),'resume':base64.b64encode(r.content).decode(),

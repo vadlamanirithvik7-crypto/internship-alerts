@@ -2,6 +2,7 @@
 {% block title %}Auto apply · Radar{% endblock %}
 {% block content %}
 <div class="page-heading"><div><span class="eyebrow">YOUR MAC, WORKING IN THE BACKGROUND</span><h1>Auto apply</h1><p>A separate background browser works through your queued internships and new matches. Your mouse, keyboard, and normal browser stay yours.</p></div></div>
+<section class="panel"><h2>Answer once, across applications</h2><p>Review your saved profile and answer remaining shared questions in one place. Known details are reused automatically.</p><a class="button" href="/autopilot/answers">Open shared answer inbox</a></section>
 <section class="panel"><h2 id="worker-mode">Worker: {{config.mode | title}}</h2><p id="worker-connection">Last connected: {{config.last_seen_at or 'Not connected yet'}}{% if config.last_seen_at %} UTC{% endif %}.</p>
 <form action="/autopilot/control" method="post" class="assistant-links"><button name="mode" value="running">Start / Resume</button><button name="mode" value="paused" class="secondary">Pause</button><button name="mode" value="stopped" class="secondary">Stop</button></form>
 <p class="muted">Pause keeps your queue. Stop also tells the local worker to exit and close its browser. Controls reach an online worker within a few seconds. An application already sent cannot be withdrawn; uncertain submissions will not retry automatically.</p>
