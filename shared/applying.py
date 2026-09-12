@@ -17,6 +17,23 @@ PROFILE_FIELDS = {
 }
 
 
+def resume_profile_links(content):
+    """Read hyperlink annotations; no network calls or resume rewriting."""
+    result={}
+    try:
+        page=PdfReader(BytesIO(content)).pages[0]
+        for annotation in page.get('/Annots',[]):
+            url=annotation.get_object().get('/A',{}).get('/URI','')
+            parsed=urlsplit(url)
+            if parsed.scheme!='https': continue
+            if parsed.hostname in ('linkedin.com','www.linkedin.com') and parsed.path.startswith('/in/'):
+                result['linkedin']=url
+            elif parsed.hostname in ('github.com','www.github.com') and len(parsed.path.strip('/').split('/'))==1:
+                result['github']=url
+    except Exception: pass
+    return result
+
+
 def json_data(value):
     return json.loads(value or "{}")
 
