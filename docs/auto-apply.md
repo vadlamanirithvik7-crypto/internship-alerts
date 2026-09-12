@@ -12,6 +12,10 @@ Radar's `/autopilot` page controls a dedicated headless Chromium worker on the o
 
 Controls are checked every two seconds during browser work and immediately before a one-use submission permit. A stop cannot revoke an HTTP request already sent. An interrupted submission without a receipt is Uncertain and never automatically retried. Check employer confirmation and record the application manually.
 
+## Live activity
+
+The Auto apply page refreshes its live panel every three seconds without reloading your settings. It shows the current company and role, the application step, totals by state, the latest ten attempts, and the Mac's connection status. Worker heartbeats report opening, checking, filling, advancing, submitting, and awaiting confirmation. A heartbeat older than thirty seconds is displayed as disconnected; failed dashboard requests are explicitly marked stale and retry automatically. The owner-only activity endpoint never includes resume contents, saved answers, contact details, or worker credentials.
+
 ## Supported behavior and limits
 
 The worker attempts single-page and common multi-step employer forms, including custom employer portals. It follows recognized Apply, Apply manually, Next, Save and continue, and Review application controls for up to ten steps. Personal data can be sent only to the original employer URL's exact HTTPS origin or the supported ATS hosts (Greenhouse, Lever, Ashby, Workday, and CareerPuck). Other portal transitions, ambiguous controls, employer accounts, CAPTCHA, and unknown required answers need manual completion. This is a general fallback, not universal site compatibility; Workday's account requirement commonly stops automatic completion. Every task still requires an exact employer job URL, a matching rendered role title, a confirmed resume upload, and a final submission permit. General careers links remain Waiting link.

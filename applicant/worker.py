@@ -49,7 +49,9 @@ async def public_request(route, employer_url=None):
     await route.continue_()
 
 
-async def prepare(page, task, local_ai, model):
+async def prepare(page, task, local_ai, model, report=None):
+    report = report or (lambda phase,step=0: None)
+    report('opening')
     from poller.application_links import is_aggregator
     if is_aggregator(task['url']):
         return None,['An exact employer application link is required; this link is a job board.']
@@ -58,6 +60,7 @@ async def prepare(page, task, local_ai, model):
     await page.goto(task['url'],wait_until='domcontentloaded',timeout=45000)
     await page.wait_for_timeout(1500)
     body=await page.locator('body').inner_text()
+    report('checking')
     # Require identity in the rendered job, not just the URL from the feed.
     title_words=[w for w in normalize(task['title']).split() if w not in ('2027','summer','internship','intern')]
     if not title_words or any(w not in normalize(body).split() for w in title_words):
@@ -77,7 +80,8 @@ async def prepare(page, task, local_ai, model):
     final_names = r'^(submit application|submit your application|send application|submit)$'
     advance_names = ['Apply manually', 'Apply', 'Apply now', 'Continue application',
                      'Save and continue', 'Next', 'Continue', 'Review application']
-    for _ in range(10):
+    for step in range(1,11):
+        report('checking',step)
         frames = [f for f in page.frames if supported(f.url, task['url'])]
         if not frames:
             return None,['The application moved to another portal that needs manual review.']
@@ -109,6 +113,7 @@ async def prepare(page, task, local_ai, model):
                         if await candidate.is_visible(): advances.append((priority,frame,candidate))
         # Fill application fields on each step; all unknown required answers stop progress.
         if finals or advances:
+            report('filling',step)
             missing=[]
             for frame in frames:
                 issues, count = await fill_form(frame,task,local_ai,model)
@@ -130,6 +135,7 @@ async def prepare(page, task, local_ai, model):
         if uploads and (await action.inner_text()).strip().lower() in ('apply','apply now'):
             return action,[]
         href = await action.get_attribute('href')
+        report('advancing',step)
         if href:
             from urllib.parse import urljoin
             target = urljoin(frame.url, href)
@@ -150,10 +156,10 @@ async def prepare(page, task, local_ai, model):
     return None,['This application needs more steps than the worker can complete in one attempt.']
 
 
-async def watch(connection, task, browser, halted):
+async def watch(connection, task, browser, halted, progress=None):
     while not halted.is_set():
         try:
-            result=await connection.call('heartbeat',task)
+            result=await connection.call('heartbeat',task,**(progress or {}))
             allowed=result.get('allowed',False)
         except Exception:
             allowed=False
@@ -167,7 +173,9 @@ async def watch(connection, task, browser, halted):
 async def execute(connection, task, playwright, model):
     browser=await playwright.chromium.launch(headless=True)
     halted=asyncio.Event()
-    monitor=asyncio.create_task(watch(connection,task,browser,halted))
+    progress={'phase':'opening','step':0}
+    def report(phase,step=0): progress.update(phase=phase,step=step)
+    monitor=asyncio.create_task(watch(connection,task,browser,halted,progress))
     started=False
     confirmation_pattern = r'(?:your application (?:has been|was) (?:successfully )?(?:submitted|received)|thank you for (?:applying|your application)|application submitted successfully)'
     try:
@@ -176,12 +184,13 @@ async def execute(connection, task, playwright, model):
         page=await context.new_page()
         page.set_default_timeout(6000)
         async with httpx.AsyncClient() as local_ai:
-            submit,questions=await prepare(page,task,local_ai,model)
+            submit,questions=await prepare(page,task,local_ai,model,report)
         if halted.is_set() or STOP.is_set(): return
         if not submit:
             await connection.call('result',task,state='needs_input',questions=questions,detail='Needs your input before submission.')
             return
         page = submit.page
+        progress['phase']='ready'
         for frame in page.frames:
             if supported(frame.url,task['url']) and re.search(confirmation_pattern, await frame.locator('body').inner_text(), re.I):
                 await connection.call('result',task,state='needs_input',detail='Existing confirmation text makes automatic submission ambiguous.',questions=[])
@@ -189,7 +198,9 @@ async def execute(connection, task, playwright, model):
         permit=await connection.call('permit',task)
         if not permit.get('allowed') or STOP.is_set() or halted.is_set(): return
         started=True
+        progress['phase']='submitting'
         await submit.click(timeout=8000)
+        progress['phase']='confirmation'
         confirmation=None
         # Confirmation must appear after clicking, in an employer-controlled frame.
         for _ in range(20):
