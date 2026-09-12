@@ -18,7 +18,7 @@ The Auto apply page refreshes its live panel every three seconds without reloadi
 
 ## Answering questions and reviewing failures
 
-The **Questions waiting for you** section at the top of Auto apply displays employer questions directly, with text boxes or captured answer choices. **Save and continue** saves that application's answer snapshot and queues it without navigating away, even while the worker handles other jobs. The live refresh preserves typing and focus, and validation failures keep the draft in place. Up to twenty applications load initially; more appear as these are answered. Employer-site failures without questions are counted separately. Confirmed submissions are always shown explicitly, including zero.
+The **Questions waiting for you** section below the worker controls displays expandable applications with employer questions directly in text boxes or captured answer choices. **Save and continue** saves that application's answer snapshot and queues it without navigating away, even while the worker handles other jobs. The live refresh preserves typing, focus, and expanded forms, and validation failures keep the draft in place. Twenty applications load initially; **Show more** loads the next twenty without clearing drafts. Employer-site failures without questions are counted separately. Confirmed submissions are always shown explicitly, including zero.
 
 Answers stay specific to this application unless the owner explicitly checks Remember for future applications. Submitted or uncertain applications cannot use this flow, and stale question forms are rejected. Saving does not start a paused or stopped worker. The separate application help page remains available for manual review and bookmarked links.
 

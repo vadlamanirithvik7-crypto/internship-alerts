@@ -24,11 +24,14 @@
     return article;
   }
   const forms = new Map();
+  let questionLimit = 20;
   let saving = false;
   function answerForm(task) {
-    const article = element('article');
+    const article = element('details');
     article.style.cssText = 'padding:16px 0;border-bottom:1px solid var(--border)';
-    article.append(element('h3', `${task.company} · ${task.title}`));
+    const summary = element('summary', `${task.company} · ${task.title} — ${task.fields.length} questions`);
+    summary.style.cssText = 'cursor:pointer;font-weight:600';
+    article.append(summary);
     if (task.blockers.length) {
       article.append(element('p', 'This form also has an employer-site issue. Saving answers lets the worker retry, but it may still need manual review:'));
       task.blockers.forEach(reason => article.append(element('p', reason)));
@@ -92,15 +95,16 @@
       const entry = answerForm(task); forms.set(task.id, entry); container.append(entry.article);
     }
     document.getElementById('questions-summary').textContent = `${data.answer_count} applications have questions you can answer here. ` +
-      (data.answer_count > forms.size ? `Showing ${forms.size}; more appear as you finish these. ` : '') +
+      (data.answer_count > forms.size ? `Showing ${forms.size}. Use Show more to see the rest. ` : '') +
       `${data.manual_count} other applications have employer-site issues with no question to answer.`;
+    document.getElementById('questions-more').hidden = data.answer_count <= forms.size || questionLimit >= 1000;
   }
   let busy = false;
   async function refresh() {
     if (busy || document.hidden) return;
     busy = true;
     try {
-      const response = await fetch('/autopilot/activity', {
+      const response = await fetch('/autopilot/activity' + (questionLimit > 20 ? `?question_limit=${questionLimit}` : ''), {
         headers: {Accept:'application/json'}, cache:'no-store', signal:AbortSignal.timeout(10000)
       });
       if (!response.ok) throw new Error(response.status === 401 ? 'Sign in to Radar to view live activity.' : 'Cannot reach Radar. Displayed status may be outdated.');
@@ -127,6 +131,9 @@
     } finally { busy = false; }
   }
   refresh();
+  document.getElementById('questions-more')?.addEventListener('click', () => {
+    questionLimit = Math.min(1000, questionLimit + 20); refresh();
+  });
   setInterval(refresh, 3000);
   document.addEventListener('visibilitychange',refresh);
 })();

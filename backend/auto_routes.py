@@ -25,7 +25,7 @@ def register(owner_app, templates, get_db):
     router = APIRouter(dependencies=[Depends(private)])
 
     @router.get('/autopilot/activity')
-    def activity(db=Depends(get_db)):
+    def activity(question_limit: int = Query(20, ge=1, le=1000), db=Depends(get_db)):
         cfg=db.get(AutoApplySettings,1) or queue.settings(db)
         now=utcnow()
         counts=dict(db.execute(select(AutoApplication.state,func.count()).group_by(AutoApplication.state)).all())
@@ -40,7 +40,7 @@ def register(owner_app, templates, get_db):
                 manual_count+=1
                 continue
             answer_ids.append(task.id)
-            if len(attention)<20:
+            if len(attention)<question_limit:
                 attention.append({'id':task.id,'company':posting.company_name,'title':posting.title,
                                   'fields':view['fields'],'blockers':view['blockers'],'version':view['version']})
         def item(task):
