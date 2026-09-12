@@ -79,6 +79,8 @@
     // Never rebuild existing forms during polling: this preserves typing and focus.
     if (saving) return;
     const container = document.getElementById('worker-questions');
+    // Older pages/API responses may still be open during a rolling deployment.
+    if (!container || !Array.isArray(data.attention)) return;
     const ids = new Set(data.answer_ids);
     for (const [id, entry] of forms) {
       if (!ids.has(id)) { entry.article.remove(); forms.delete(id); }
