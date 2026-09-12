@@ -175,7 +175,7 @@ def receipt(db, task, payload):
         task.state = 'uncertain'
         task.detail = 'Submission was attempted without confirmation. Check the employer before retrying.'
     elif task.state == 'running':
-        task.state = 'needs_input'
+        task.state = 'cancelled' if state == 'cancelled' else 'needs_input'
         task.detail = str(payload.get('detail', 'Please review the employer form.'))[:600]
         questions = payload.get('questions', [])
         if not isinstance(questions, list) or len(questions) > 80:

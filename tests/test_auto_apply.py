@@ -141,3 +141,56 @@ def test_missing_answer_prevents_browser_submission(monkeypatch):
             assert missing==['Are you a US citizen?']
             await browser.close()
     asyncio.run(check())
+
+
+def test_citizenship_cancellation_does_not_mark_applied(db):
+    p,r,cfg=setup(db); task=queue.claim(db,cfg)
+    queue.receipt(db,task,{'state':'cancelled','detail':'US citizenship question; answer No.'})
+    assert task.state=='cancelled' and not task.submission_started_at
+    assert p.status!='applied' and p.applied_at is None
+    assert queue.claim(db,cfg) is None
+    # Cancellation must never conceal a submission that might have succeeded.
+    task.state='submitting';task.submission_started_at=utcnow()
+    queue.receipt(db,task,{'state':'cancelled'})
+    assert task.state=='uncertain'
+
+
+@pytest.mark.parametrize('question', [
+    'Are you a U.S. citizen?', 'Do you hold United States citizenship?',
+    'Are you a citizen of the United States of America?', 'Are you an American citizen?',
+])
+def test_citizenship_question_wording(question):
+    from applicant.forms import asks_us_citizenship
+    assert asks_us_citizenship(question)
+    assert not asks_us_citizenship('Are you legally authorized to work in the US?')
+    assert not asks_us_citizenship('What is your country of citizenship?')
+
+
+@pytest.mark.parametrize('form', [
+    '<label>Are you a U.S. citizen?<select><option>Yes</option><option>No</option></select></label>',
+    '<fieldset><legend>Are you a citizen of the United States?</legend><label>Yes<input type="radio" name="citizen"></label><label>No<input type="radio" name="citizen"></label></fieldset>',
+])
+def test_citizenship_question_cancels_before_permit(monkeypatch, form):
+    import asyncio
+    from playwright.async_api import async_playwright
+    from applicant import worker
+    from applicant.forms import SKIP_CITIZENSHIP
+    html='<p>Fixture</p><h1>Software Engineering Intern</h1><form>'+form+'<button>Submit application</button></form>'
+    class Fake:
+        def __init__(self): self.calls=[]
+        async def call(self,action,task=None,**data):
+            self.calls.append((action,data)); return {'allowed':True,'mode':'running'}
+    async def fixture_route(route):
+        await route.fulfill(status=200,content_type='text/html',body=html)
+    monkeypatch.setattr(worker,'public_request',fixture_route)
+    task={'id':1,'claim_token':'x','url':'https://jobs.lever.co/fixture/1',
+          'title':'Software Engineering Intern','company':'Fixture','profile':{},
+          'answers':{SKIP_CITIZENSHIP:'Yes'}}
+    async def check():
+        async with async_playwright() as p:
+            connection=Fake(); await worker.execute(connection,task,p,'')
+            assert not any(action=='permit' for action,_ in connection.calls)
+            receipts=[data for action,data in connection.calls if action=='result']
+            assert receipts[-1]['state']=='cancelled'
+            assert 'answer is No' in receipts[-1]['detail']
+    asyncio.run(check())
