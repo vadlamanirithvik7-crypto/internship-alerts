@@ -20,6 +20,8 @@ The local model only selects an equivalent existing saved-answer key. It cannot 
 
 Queue identity uses normalized company and role, intentionally suppressing multi-location and multi-source copies. Resumes and applicant answers are pinned per task. Already applied or dismissed roles are checked again before submission. Separate new tables preserve historical retired-queue records and inherit PostgreSQL RLS protection at creation.
 
+The saved preference `Skip applications that ask about US citizenship = Yes` cancels a task before entering personal data if a form asks about US citizenship, including optional questions and radio groups. Explicit citizenship/permanent-residency restrictions also cancel. The task records the reason, remains in history, and is never marked Applied or sent to the application spreadsheet. The listing remains available for manual review. Answer variants concerning authorization, sponsorship, visa status, or availability still require saved facts; this preference does not infer any of them.
+
 Private resumes and answers are sent only over the authenticated worker connection and to the selected employer's supported application forms. No applicant data, connection tokens, or page contents are printed in worker logs. Public third-party page text is untrusted; model output is restricted to known saved keys. The worker blocks private-network browser requests and unsupported form POST destinations.
 
 ## Validation

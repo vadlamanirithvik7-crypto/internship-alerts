@@ -6,6 +6,32 @@ import httpx
 
 SUPPORTED = ('greenhouse.io', 'lever.co', 'myworkdayjobs.com', 'ashbyhq.com', 'careerpuck.com')
 SENSITIVE = re.compile(r'citizen|sponsor|authoriz|visa|disabil|gender|race|ethnic|veteran|certif|consent|agree|signature|criminal|convict|assessment|test question', re.I)
+SKIP_CITIZENSHIP = 'Skip applications that ask about US citizenship'
+
+
+class CitizenshipDeclined(Exception):
+    """Owner requested no submission when a form asks about US citizenship."""
+
+
+def asks_us_citizenship(question):
+    question = normalize(question)
+    return bool(re.search(r'\bcitizen(?:s|ship)?\b', question) and
+                re.search(r'\b(?:us|u s|usa|u s a|united states(?: of america)?|american)\b', question))
+
+
+def skip_citizenship(answers):
+    return normalize(str(answers.get(SKIP_CITIZENSHIP, ''))) == 'yes'
+
+
+async def check_citizenship(frame, answers):
+    if not skip_citizenship(answers):
+        return
+    fields = await frame.locator('input, textarea, select, [role="combobox"]:not(input)').evaluate_all(FIELDS)
+    for field in fields:
+        if field['disabled'] or field['type'] in ('hidden', 'submit', 'button', 'reset'):
+            continue
+        if asks_us_citizenship(field['group'] + ' ' + field['label']):
+            raise CitizenshipDeclined('Skipped: US citizenship question; your answer is No. No application was submitted.')
 
 
 def supported(url):
@@ -66,6 +92,8 @@ FIELDS = """els => els.map((e,i) => {
 
 
 async def fill_form(frame, task, client, model=''):
+    # Check all questions before attaching a resume or entering personal data.
+    await check_citizenship(frame, task['answers'])
     elements=frame.locator('input, textarea, select, [role="combobox"]:not(input)')
     fields=await elements.evaluate_all(FIELDS)
     missing=[]; uploads=0

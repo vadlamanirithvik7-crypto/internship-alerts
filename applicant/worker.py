@@ -14,7 +14,7 @@ import subprocess
 from urllib.parse import urlsplit
 import httpx
 from playwright.async_api import async_playwright
-from applicant.forms import supported, fill_form, normalize
+from applicant.forms import supported, fill_form, normalize, check_citizenship, skip_citizenship, CitizenshipDeclined
 
 STATE = Path.home() / 'Library/Application Support/Internship Radar Worker'
 STOP = asyncio.Event()
@@ -66,9 +66,14 @@ async def prepare(page, task, local_ai, model):
     if re.search(r'verify you are human|complete the captcha|access denied|sign in to your account|create an account to apply',body,re.I):
         return None,['Employer login or human verification required.']
     from shared.eligibility import restriction_reasons
-    if restriction_reasons(task['title'],body):
+    restrictions = restriction_reasons(task['title'],body)
+    if skip_citizenship(task['answers']) and 'Citizenship / permanent-residency restriction' in restrictions:
+        raise CitizenshipDeclined('Skipped: employer requires citizenship or permanent residency. No application was submitted.')
+    if restrictions:
         return None,['Employer page lists an eligibility restriction. Review it before applying.']
     frames=[f for f in page.frames if supported(f.url)]
+    for frame in frames:
+        await check_citizenship(frame, task['answers'])
     for frame in frames:
         # Only a real submit control permits this adapter to submit. Multi-step login/application
         # flows are deliberately handed back until that employer adapter is supported.
@@ -132,6 +137,9 @@ async def execute(connection, task, playwright, model):
             if confirmation: break
             await asyncio.sleep(1)
         await connection.call('result',task,state='submitted' if confirmation else 'uncertain',confirmation=confirmation or '')
+    except CitizenshipDeclined as exc:
+        if not started and not halted.is_set() and not STOP.is_set():
+            await connection.call('result',task,state='cancelled',detail=str(exc),questions=[])
     except Exception:
         # Never log applicant data, URLs containing secrets, or page contents.
         with contextlib.suppress(Exception):
