@@ -181,12 +181,13 @@ async def fill_form(frame, task, client, model=''):
                 if len(choices)!=1: missing.append(question+' (choose an exact option)')
                 else: await el.select_option(label=choices[0])
             elif combo:
-                choices=[o for o in options if normalize(o)==normalize(str(value))]
+                choices=[o for o in options if normalize(o)==normalize(str(value)) or
+                         (normalize(question)=='country' and normalize(re.sub(r'\s*\+\d+$','',o))==normalize(str(value)))]
                 if options and len(choices)!=1:
                     missing.append(question+' (choose an exact option)'); continue
                 selected=choices[0] if choices else str(value)
                 await el.click()
-                if await el.get_attribute('readonly') is None: await el.fill(selected)
+                if await el.get_attribute('readonly') is None: await el.fill(str(value))
                 option=frame.get_by_role('option',name=selected,exact=True)
                 await option.wait_for(state='visible',timeout=2500)
                 await option.click()
