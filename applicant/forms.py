@@ -34,8 +34,16 @@ async def check_citizenship(frame, answers):
             raise CitizenshipDeclined('Skipped: US citizenship question; your answer is No. No application was submitted.')
 
 
-def supported(url):
-    host = (urlsplit(url).hostname or '').lower()
+def supported(url, employer_url=None):
+    parsed = urlsplit(url)
+    if parsed.scheme != 'https' or parsed.username or parsed.password:
+        return False
+    host = (parsed.hostname or '').lower()
+    # Try custom employer portals too, confined to the exact original origin.
+    if employer_url:
+        employer = urlsplit(employer_url)
+        if employer.scheme == 'https' and (host, parsed.port or 443) == (employer.hostname, employer.port or 443):
+            return True
     return any(host == d or host.endswith('.'+d) for d in SUPPORTED)
 
 
