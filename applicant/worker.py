@@ -187,7 +187,8 @@ async def execute(connection, task, playwright, model):
             submit,questions=await prepare(page,task,local_ai,model,report)
         if halted.is_set() or STOP.is_set(): return
         if not submit:
-            await connection.call('result',task,state='needs_input',questions=questions,detail='Needs your input before submission.')
+            from shared.auto_input import pack_questions
+            await connection.call('result',task,state='needs_input',questions=pack_questions(questions,task.get('_question_fields',{})),detail='Review the questions or employer issue before retrying.')
             return
         page = submit.page
         progress['phase']='ready'

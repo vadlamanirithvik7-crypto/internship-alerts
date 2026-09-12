@@ -10,6 +10,7 @@ from fastapi.responses import RedirectResponse, Response
 from sqlalchemy import select, func
 from shared.db import AutoApplication, AutoApplySettings, StoredResume, Posting, utcnow
 from shared import auto_apply as queue
+from shared.auto_input import question_view
 
 PHASES = {'opening':'Opening employer application', 'checking':'Checking requirements',
           'filling':'Filling saved details and attaching your resume', 'advancing':'Moving to the next step',
@@ -33,8 +34,11 @@ def register(owner_app, templates, get_db):
         def item(task):
             if not task: return None
             posting=db.get(Posting,task.posting_id)
+            view=question_view(task)
             return {'id':task.id,'posting_id':task.posting_id,'company':posting.company_name,
                     'title':posting.title,'state':task.state,'detail':task.detail,
+                    'status_label':view['label'],'action_label':view['action'],
+                    'task_url':f'/autopilot/tasks/{task.id}',
                     'updated_at':task.updated_at.isoformat()+'Z'}
         result={'mode':cfg.mode,'connected':bool(cfg.last_seen_at and cfg.last_seen_at>now-timedelta(seconds=30)),
                 'last_seen_at':cfg.last_seen_at.isoformat()+'Z' if cfg.last_seen_at else None,
@@ -58,7 +62,56 @@ def register(owner_app, templates, get_db):
             'postings':{t.posting_id:db.get(Posting,t.posting_id) for t in tasks},
             'saved_answers':json.loads(cfg.answers),
             'counts':counts, 'total_tasks':total, 'queue_page':page, 'queue_pages':pages,
+            'task_views':{t.id:question_view(t) for t in tasks},
         })
+
+    def task_page(request, db, task, error=None, values=None):
+        view=question_view(task)
+        answers=json.loads(task.answers or '{}')
+        return templates.TemplateResponse(request,'auto_task.html',{
+            'task':task,'posting':db.get(Posting,task.posting_id),'view':view,
+            'values':values if values is not None else [answers.get(f['label'],'') for f in view['fields']],
+            'error':error,'config':queue.settings(db),
+        },status_code=422 if error else 200)
+
+    @router.get('/autopilot/tasks/{task_id}')
+    def task_detail(task_id:int, request:Request, db=Depends(get_db)):
+        task=db.get(AutoApplication,task_id)
+        if not task: raise HTTPException(404,'Application task not found.')
+        response=task_page(request,db,task)
+        db.commit()
+        return response
+
+    @router.post('/autopilot/tasks/{task_id}/answers')
+    async def task_answers(task_id:int,request:Request,db=Depends(get_db)):
+        cfg=queue.settings(db)
+        task=db.scalar(select(AutoApplication).where(AutoApplication.id==task_id).with_for_update())
+        if not task or task.state!='needs_input' or task.submission_started_at:
+            raise HTTPException(409,'This application is no longer waiting for answers. Reload its task page.')
+        view=question_view(task); form=await request.form()
+        if form.get('version')!=view['version']:
+            raise HTTPException(409,'The questions changed. Reload this task page before answering.')
+        values=[str(form.get(f'answer_{i}','')).strip() for i in range(len(view['fields']))]
+        error=None
+        if not view['fields']: error='This is an employer-site issue. Use the manual review instructions below.'
+        elif any(not value or len(value)>1500 for value in values): error='Answer each question using at most 1,500 characters.'
+        elif any(field['options'] and value not in field['options'] for field,value in zip(view['fields'],values)):
+            error='Choose one of the employer’s listed options for each dropdown.'
+        if error:
+            response=task_page(request,db,task,error,values);db.commit();return response
+        updates={field['label']:value for field,value in zip(view['fields'],values)}
+        answers=json.loads(task.answers or '{}');answers.update(updates)
+        task.answers=json.dumps(answers)
+        if form.get('remember')=='yes':
+            saved=json.loads(cfg.answers);saved.update(updates)
+            if len(saved)>100:
+                db.rollback()
+                return task_page(request,db,task,'Your saved-answer library has reached 100 questions. Uncheck remember to answer only this application.',values)
+            cfg.answers=json.dumps(saved)
+        task.state='queued';task.claim_token=None;task.questions='[]';task.updated_at=utcnow()
+        task.detail='Answers saved. Waiting for your Mac to retry this application.'
+        db.commit()
+        return RedirectResponse(f'/autopilot/tasks/{task_id}',303)
 
     @router.post('/autopilot/backfill')
     def backfill(db=Depends(get_db)):
@@ -121,7 +174,8 @@ def register(owner_app, templates, get_db):
         t.answers=cfg.answers
         t.applicant=json.dumps(queue.ready(db,cfg))
         t.state='queued'; t.questions='[]'; t.claim_token=None
-        db.commit(); return RedirectResponse('/autopilot',303)
+        t.detail='Retry requested. Waiting for your Mac.';t.updated_at=utcnow()
+        db.commit(); return RedirectResponse(f'/autopilot/tasks/{task_id}',303)
 
     @router.post('/integrations/auto-apply')
     async def worker(request:Request, background_tasks:BackgroundTasks, db=Depends(get_db)):
