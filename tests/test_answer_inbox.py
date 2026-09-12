@@ -169,3 +169,16 @@ def test_worker_searches_school_beyond_initial_menu():
             assert await page.locator('#school').input_value()=='University of Texas at Austin'
             await browser.close()
     asyncio.run(check())
+
+
+def test_consent_and_unlabeled_dates_stay_with_their_employer(client):
+    c,_,Session=client
+    with Session() as db:
+        tid,_,rid=waiting_task(db,[{'label':'Privacy Statement*','options':['I agree']}])
+        add_waiting(db,rid,'Privacy Statement*',['I agree'])
+    page=c.get('/autopilot/answers')
+    assert 'Remaining questions · 2' in page.text
+    name=re.search(r'<select name="(q_[a-f0-9]+)"',page.text)[1]
+    c.post('/autopilot/answers',data={name:'I agree'})
+    with Session() as db:
+        assert 'Privacy Statement*' not in json.loads(queue.settings(db).answers)

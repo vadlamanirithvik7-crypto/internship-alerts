@@ -43,7 +43,7 @@ def inbox(tasks, postings, profile, shared):
         if view['blockers']: issues+=1
         for field in view['fields']:
             semantic=concept(field['label']) or question_key(field['label'])
-            scoped=bool(re.search(r'\bwhy\b|this (?:role|position|company)|our (?:team|company)|employee referral|referred by',field['label'],re.I))
+            scoped=bool(re.search(r'\bwhy\b|this (?:role|position|company)|our (?:team|company)|employee referral|referred by|privacy|terms and conditions|consent|certif|acknowledge|code of conduct|pick date|select date|choose date',field['label'],re.I))
             # Keep employer-specific wording and different choices separate.
             key=hashlib.sha256(json.dumps([semantic,sorted(field['options']),task.posting_id if scoped else None]).encode()).hexdigest()[:24]
             group=groups.setdefault(key,{'id':key,'label':field['label'],'options':field['options'],
