@@ -279,6 +279,44 @@ class ApplicationWorker(Base):
     last_seen_at = Column(DateTime, default=utcnow, nullable=False)
 
 
+class AutoApplySettings(Base):
+    __tablename__ = "auto_apply_settings"
+    id = Column(Integer, primary_key=True)
+    mode = Column(String(20), default="stopped", nullable=False)
+    software_resume_id = Column(Integer, ForeignKey("stored_resumes.id"))
+    hardware_resume_id = Column(Integer, ForeignKey("stored_resumes.id"))
+    embedded_resume_id = Column(Integer, ForeignKey("stored_resumes.id"))
+    answers = Column(Text, default="{}", nullable=False)
+    token_digest = Column(String(64), default="", nullable=False)
+    started_at = Column(DateTime)
+    last_seen_at = Column(DateTime)
+    generation = Column(Integer, default=0, nullable=False)
+    last_queued_at = Column(DateTime)
+
+
+class AutoApplication(Base):
+    __tablename__ = "auto_applications"
+    destination_key = Column(String(64), unique=True)
+    id = Column(Integer, primary_key=True)
+    posting_id = Column(Integer, ForeignKey("postings.id"), unique=True, nullable=False)
+    resume_id = Column(Integer, ForeignKey("stored_resumes.id"), nullable=False)
+    application_key = Column(String(64), unique=True, nullable=False)
+    target_url = Column(Text, nullable=False)
+    applicant = Column(Text, nullable=False)
+    answers = Column(Text, default="{}", nullable=False)
+    questions = Column(Text, default="[]", nullable=False)
+    state = Column(String(30), default="queued", nullable=False)
+    detail = Column(String(600), default="Waiting for your Mac.", nullable=False)
+    claim_token = Column(String(64))
+    claimed_at = Column(DateTime)
+    generation = Column(Integer, nullable=False, default=0)
+    submission_started_at = Column(DateTime)
+    submitted_at = Column(DateTime)
+    confirmation = Column(String(600), default="", nullable=False)
+    created_at = Column(DateTime, default=utcnow, nullable=False)
+    updated_at = Column(DateTime, default=utcnow, nullable=False)
+
+
 class MailConnection(Base):
     __tablename__ = "mail_connection"
     id = Column(Integer, primary_key=True)

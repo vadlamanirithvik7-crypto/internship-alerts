@@ -67,7 +67,7 @@ The live feed and alert worker require explicit evidence of a **United States wo
 
 ## Manual applications and eligibility
 
-Open a role and tap **Open employer application** to apply yourself. Radar never fills or submits the application. After submitting, use **Mark applied** to remove the role from discovery and update the live Google Sheet. Saved PDFs remain available for download. The former automatic submission worker and queue are removed; historical records remain stored.
+Open a role and tap **Open employer application** to apply yourself. Manual applications remain available. Opt-in [local auto apply](docs/auto-apply.md) can fill supported employer forms using your saved facts and selected resume. After submitting, use **Mark applied** to remove the role from discovery and update the live Google Sheet. Saved PDFs remain available for download. The retired queue remains disabled; the new `/autopilot` worker uses a separate opt-in queue with Pause and Stop controls. Historical records remain stored.
 
 The three role filters use actual job titles: software engineering, embedded/firmware, and electrical/hardware/chip design. Broad skill or employer-description mentions no longer make unrelated roles qualify. Listed citizenship/permanent-residency requirements and graduate-only roles are excluded from discovery and alerts; bachelor's/master's alternatives remain eligible. Missing or incomplete requirements cannot establish individual eligibility—check employer requirements and work authorization before applying. **Not interested** hides a card persistently and stops its alerts; restore it from Applications → Not interested by changing its stage to New.
 

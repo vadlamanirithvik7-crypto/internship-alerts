@@ -13,3 +13,5 @@ graphify-out/
 !.env.example
 .pytest_cache/
 evaluation/local/
+
+radar-worker*.json
