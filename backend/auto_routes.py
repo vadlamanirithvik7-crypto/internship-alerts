@@ -6,7 +6,7 @@ import json
 import secrets
 from datetime import timedelta
 from fastapi import APIRouter, Depends, HTTPException, Request, BackgroundTasks, Query
-from fastapi.responses import RedirectResponse, Response
+from fastapi.responses import RedirectResponse, Response, JSONResponse
 from sqlalchemy import select, func
 from shared.db import AutoApplication, AutoApplySettings, StoredResume, Posting, utcnow
 from shared import auto_apply as queue
@@ -31,19 +31,34 @@ def register(owner_app, templates, get_db):
         counts=dict(db.execute(select(AutoApplication.state,func.count()).group_by(AutoApplication.state)).all())
         active=db.scalar(select(AutoApplication).where(AutoApplication.state.in_(['running','submitting'])).order_by(AutoApplication.claimed_at.desc()).limit(1))
         recent=list(db.scalars(select(AutoApplication).where(AutoApplication.state.not_in(['queued','waiting_link'])).order_by(AutoApplication.updated_at.desc(),AutoApplication.id.desc()).limit(10)))
+        attention=[]; answer_ids=[]; manual_count=0
+        for task, posting in db.execute(select(AutoApplication, Posting).join(Posting, Posting.id==AutoApplication.posting_id).where(
+                AutoApplication.state=='needs_input', AutoApplication.submission_started_at.is_(None)
+            ).order_by(AutoApplication.updated_at.desc(),AutoApplication.id.desc())):
+            view=question_view(task)
+            if not view['fields']:
+                manual_count+=1
+                continue
+            answer_ids.append(task.id)
+            if len(attention)<20:
+                attention.append({'id':task.id,'company':posting.company_name,'title':posting.title,
+                                  'fields':view['fields'],'blockers':view['blockers'],'version':view['version']})
         def item(task):
             if not task: return None
             posting=db.get(Posting,task.posting_id)
             view=question_view(task)
             return {'id':task.id,'posting_id':task.posting_id,'company':posting.company_name,
-                    'title':posting.title,'state':task.state,'detail':task.detail,
+                    'title':posting.title,'state':task.state,
+                    'detail': ('Answer the employer questions below.' if view['fields'] else 'Employer-site issue; no answer to enter here.') if task.state=='needs_input' else task.detail,
+                    'has_questions':bool(view['fields']),
                     'status_label':view['label'],'action_label':view['action'],
                     'task_url':f'/autopilot/tasks/{task.id}',
                     'updated_at':task.updated_at.isoformat()+'Z'}
         result={'mode':cfg.mode,'connected':bool(cfg.last_seen_at and cfg.last_seen_at>now-timedelta(seconds=30)),
                 'last_seen_at':cfg.last_seen_at.isoformat()+'Z' if cfg.last_seen_at else None,
                 'counts':counts,'total':sum(counts.values()),'active':item(active),
-                'recent':[item(task) for task in recent],'checked_at':now.isoformat()+'Z'}
+                'recent':[item(task) for task in recent],'checked_at':now.isoformat()+'Z',
+                'attention':attention,'answer_ids':answer_ids,'answer_count':len(answer_ids),'manual_count':manual_count}
         db.commit()
         return result
 
@@ -84,6 +99,10 @@ def register(owner_app, templates, get_db):
 
     @router.post('/autopilot/tasks/{task_id}/answers')
     async def task_answers(task_id:int,request:Request,db=Depends(get_db)):
+        inline='application/json' in request.headers.get('accept','')
+        def invalid(message, values):
+            if inline: return JSONResponse({'detail':message},status_code=422)
+            return task_page(request,db,task,message,values)
         cfg=queue.settings(db)
         task=db.scalar(select(AutoApplication).where(AutoApplication.id==task_id).with_for_update())
         if not task or task.state!='needs_input' or task.submission_started_at:
@@ -98,7 +117,7 @@ def register(owner_app, templates, get_db):
         elif any(field['options'] and value not in field['options'] for field,value in zip(view['fields'],values)):
             error='Choose one of the employer’s listed options for each dropdown.'
         if error:
-            response=task_page(request,db,task,error,values);db.commit();return response
+            response=invalid(error,values);db.commit();return response
         updates={field['label']:value for field,value in zip(view['fields'],values)}
         answers=json.loads(task.answers or '{}');answers.update(updates)
         task.answers=json.dumps(answers)
@@ -106,11 +125,13 @@ def register(owner_app, templates, get_db):
             saved=json.loads(cfg.answers);saved.update(updates)
             if len(saved)>100:
                 db.rollback()
-                return task_page(request,db,task,'Your saved-answer library has reached 100 questions. Uncheck remember to answer only this application.',values)
+                return invalid('Your saved-answer library has reached 100 questions. Uncheck remember to answer only this application.',values)
             cfg.answers=json.dumps(saved)
         task.state='queued';task.claim_token=None;task.questions='[]';task.updated_at=utcnow()
         task.detail='Answers saved. Waiting for your Mac to retry this application.'
         db.commit()
+        if inline:
+            return {'id':task.id,'state':task.state,'message': 'Answers saved. Your connected Mac will continue this application from the queue.' if cfg.mode=='running' else 'Answers saved and queued. Use Start / Resume and connect your Mac to continue.'}
         return RedirectResponse(f'/autopilot/tasks/{task_id}',303)
 
     @router.post('/autopilot/backfill')
