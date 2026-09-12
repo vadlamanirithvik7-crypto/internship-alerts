@@ -185,3 +185,89 @@ def test_show_more_questions_preserves_expanded_draft(client):
         pw.expect(page.locator('#questions-more')).to_be_hidden()
         assert page.url==origin+'/autopilot'
         browser.close()
+
+
+def test_metadata_refresh_merges_options_and_preserves_partial_draft(client,monkeypatch):
+    from shared.employer_questions import greenhouse_questions_url,refresh_questions,discovery_answer,SOURCE_KEY
+    assert greenhouse_questions_url('https://job-boards.greenhouse.io/test/jobs/123').endswith('/test/jobs/123?questions=true')
+    assert greenhouse_questions_url('https://job-boards.greenhouse.io.evil.test/test/jobs/123') is None
+    schema=[{'label':'Authorization?','options':['Choice A','Choice B'],'required':True},
+            {'label':'How did you hear about us?','options':['AfroTech','Friend','Other'],'required':True}]
+    updated=refresh_questions(['Authorization?*','AfroTech','Friend','Other','School*'],schema)
+    assert len(updated)==3 and updated[0]['options']==['Choice A','Choice B']
+    assert updated[-1]['label']=='How did you hear about us?'
+    assert discovery_answer('How did you hear about us?',['Other','Friend'],{SOURCE_KEY:'Internship Radar'})=='Other'
+    assert discovery_answer('How did you hear about us?',['Friend'],{SOURCE_KEY:'Internship Radar'}) is None
+    c,_,Session=client
+    with Session() as db:
+        tid,_,_=waiting_task(db,['Authorization?*','AfroTech','Friend','Other','School*'])
+        task=db.get(AutoApplication,tid); task.target_url='https://job-boards.greenhouse.io/test/jobs/123'
+        version=question_view(task)['version'];db.commit()
+    class Response:
+        def raise_for_status(self): pass
+        def json(self): return {'questions':[{'label':q['label'],'required':True,'fields':[{'type':'multi_value_single_select','values':[{'label':v} for v in q['options']]}]} for q in schema]}
+    monkeypatch.setattr('requests.get',lambda *args,**kwargs:Response())
+    result=c.post(f'/autopilot/tasks/{tid}/refresh-questions',data={'version':version,'answer_0':'Unclear draft','answer_4':'My university'})
+    assert result.status_code==200
+    attention=c.get('/autopilot/activity').json()['attention'][0]
+    assert attention['fields'][0]['options']==['Choice A','Choice B']
+    assert attention['values'][:2]==['Unclear draft','My university']
+    with Session() as db: assert db.get(AutoApplication,tid).state=='needs_input'
+
+
+def test_batch_retry_preserves_specific_answers_and_submission_guards(client):
+    c,_,Session=client
+    with Session() as db:
+        tid,_,rid=waiting_task(db,['Country?'])
+        cfg=queue.settings(db);cfg.answers='{"Country?":"United States","GPA":"3.00"}'
+        task=db.get(AutoApplication,tid);task.answers='{"Country?":"Canada"}';db.commit()
+    assert c.post('/autopilot/retry-attention').status_code==200
+    with Session() as db:
+        task=db.get(AutoApplication,tid)
+        assert task.state=='queued' and task.resume_id==rid
+        assert json.loads(task.answers)=={'Country?':'Canada','GPA':'3.00'}
+        task.state='needs_input';db.commit()
+    c.post('/autopilot/retry-attention',data={'replace_saved':'yes'})
+    with Session() as db:
+        task=db.get(AutoApplication,tid)
+        assert json.loads(task.answers)['Country?']=='United States'
+        task.state='needs_input';task.submission_started_at=utcnow();db.commit()
+    c.post('/autopilot/retry-attention')
+    with Session() as db: assert db.get(AutoApplication,tid).state=='needs_input'
+
+
+def test_greenhouse_choices_checkbox_groups_and_hidden_proxies():
+    import asyncio
+    import httpx
+    from playwright.async_api import async_playwright
+    from applicant.forms import fill_form,answer_for
+    from shared.employer_questions import SOURCE_KEY
+    assert answer_for('Will you now or in the future require visa sponsorship?',{}, {'Sponsorship required':'No'})=='No'
+    assert answer_for('What visa do you hold?',{}, {'Sponsorship required':'No'}) is None
+    async def check():
+        async with async_playwright() as p, httpx.AsyncClient() as client:
+            browser=await p.chromium.launch()
+            page=await browser.new_page()
+            await page.set_content('''<label for="auth">Work authorization*</label>
+<input id="auth" role="combobox" aria-required="true" readonly onclick="document.getElementById('choices').hidden=false">
+<input id="proxy" required aria-hidden="true" tabindex="-1">
+<div id="choices" role="listbox" hidden><div role="option" onclick="pick(this)">Needs sponsorship</div><div role="option" onclick="pick(this)">No restrictions</div></div>
+<fieldset aria-required="true"><legend>How did you hear about us?*</legend>
+<label><input id="afro" type="checkbox" required onchange="for(const e of this.closest('fieldset').querySelectorAll('input'))e.required=false">AfroTech</label>
+<label><input id="other" type="checkbox" required onchange="for(const e of this.closest('fieldset').querySelectorAll('input'))e.required=false">Other</label></fieldset>
+<label>If Other, Please Specify<input id="source-detail"></label><label>City<input id="city"></label>
+<script>function pick(e){const ghost=document.createElement('input');ghost.type='hidden';document.body.prepend(ghost);document.getElementById('auth').value=e.textContent;document.getElementById('proxy').value='selected';document.getElementById('choices').hidden=true}</script>''')
+            task={'profile':{},'answers':{SOURCE_KEY:'Internship Radar'},'_employer_schema':[{'label':'Work authorization','options':['Needs sponsorship','No restrictions']} ]}
+            missing,_=await fill_form(page,task,client)
+            assert missing==['Work authorization*']
+            assert task['_question_fields']['Work authorization*']==['Needs sponsorship','No restrictions']
+            assert await page.get_by_label('Other',exact=True).is_checked()
+            assert await page.get_by_label('If Other, Please Specify',exact=True).input_value()=='Internship Radar'
+            task['answers']['Work authorization*']='No restrictions'
+            task['answers']['City']='Austin'
+            missing,_=await fill_form(page,task,client)
+            assert missing==[]
+            assert await page.locator('#auth').input_value()=='No restrictions'
+            assert await page.locator('#city').input_value()=='Austin'
+            await browser.close()
+    asyncio.run(check())

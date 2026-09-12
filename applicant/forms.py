@@ -3,6 +3,7 @@ import json
 import re
 from urllib.parse import urlsplit
 import httpx
+from shared.employer_questions import greenhouse_questions_url, schema_questions, discovery_answer
 
 SUPPORTED = ('greenhouse.io', 'lever.co', 'myworkdayjobs.com', 'ashbyhq.com', 'careerpuck.com')
 SENSITIVE = re.compile(r'citizen|sponsor|authoriz|visa|disabil|gender|race|ethnic|veteran|certif|consent|agree|signature|criminal|convict|assessment|test question', re.I)
@@ -56,6 +57,10 @@ def answer_for(label, profile, answers):
     explicit = {normalize(k):v for k,v in answers.items()}
     if label in explicit:
         return explicit[label]
+    # Owner policy applies to direct need/require-sponsorship questions, not
+    # inverted wording, citizenship, or a request for the specific visa type.
+    if explicit.get('sponsorship required')=='No' and re.search(r'\b(?:need|require)\b.*\bsponsor',label) and not re.search(r'\b(?:not|without)\b',label):
+        return 'No'
     if SENSITIVE.search(label):
         return None
     aliases = {'first name':'first_name','given name':'first_name','last name':'last_name',
@@ -92,9 +97,9 @@ FIELDS = """els => els.map((e,i) => {
  const labelled = (e.getAttribute('aria-labelledby')||'').split(' ').map(id=>document.getElementById(id)?.innerText||'').join(' ').trim();
  const group = e.closest('fieldset')?.querySelector('legend')?.innerText || '';
  const label = own || labelled || e.getAttribute('aria-label') || e.getAttribute('placeholder') || (e.type==='file' ? e.name || e.id : '') || '';
- return {index:i, label:label.slice(0,300), group:group.slice(0,300), type:e.type||e.getAttribute('role')||e.tagName.toLowerCase(),
+ return {index:i, id:e.id, label:label.slice(0,300), group:group.slice(0,300), type:e.type||e.getAttribute('role')||e.tagName.toLowerCase(),
  required:e.required || e.getAttribute('aria-required')==='true' || label.includes('*'),
- visible:!!(e.offsetWidth||e.offsetHeight||e.getClientRects().length),disabled:e.disabled,
+ visible:e.getAttribute('aria-hidden')!=='true' && !!(e.offsetWidth||e.offsetHeight||e.getClientRects().length),disabled:e.disabled,
  value:e.value||'',checked:e.checked||false,options:e.options?Array.from(e.options).filter(o=>o.value&&!o.disabled).map(o=>o.text):[]};
 })"""
 
@@ -104,9 +109,23 @@ async def fill_form(frame, task, client, model=''):
     await check_citizenship(frame, task['answers'])
     elements=frame.locator('input, textarea, select, [role="combobox"]:not(input)')
     fields=await elements.evaluate_all(FIELDS)
-    missing=[]; uploads=0
+    if '_employer_schema' not in task:
+        task['_employer_schema']=[]
+        url=greenhouse_questions_url(task.get('url',''))
+        if url:
+            try:
+                response=await client.get(url,timeout=10,follow_redirects=False)
+                response.raise_for_status()
+                task['_employer_schema']=schema_questions(response.json())
+            except (httpx.HTTPError,ValueError): pass
+    schema={normalize(q['label']):q['options'] for q in task['_employer_schema']}
+    missing=[]; uploads=0; handled=set(); referral_other=False
+    def control(field):
+        # React can insert/remove hidden proxy inputs after every dropdown.
+        # Resolve stable employer IDs rather than reusing a shifted DOM index.
+        return frame.locator('[id='+json.dumps(field['id'])+']') if field['id'] else elements.nth(field['index'])
     for f in fields:
-        kind=f['type']; label=f['label']; el=elements.nth(f['index'])
+        kind=f['type']; label=f['label']; el=control(f)
         if f['disabled'] or kind in ('hidden','submit','button','reset'):
             continue
         if kind=='file':
@@ -118,20 +137,40 @@ async def fill_form(frame, task, client, model=''):
             elif f['required']: missing.append('Required attachment: '+(label or 'Unidentified attachment'))
             continue
         if not f['visible']: continue
-        question=f['group'] if kind=='radio' and f['group'] else label
+        grouped=kind in ('radio','checkbox') and f['group'] and len([x for x in fields if x['type']==kind and x['group']==f['group']])>1
+        question=f['group'] if grouped else label
+        if grouped and (kind,question) in handled: continue
+        if grouped: handled.add((kind,question))
+        options=f['options'] or schema.get(normalize(question),[])
+        combo=kind=='combobox' or await el.get_attribute('role')=='combobox'
+        if grouped:
+            options=[item['label'] for item in fields if item['type']==kind and item['group']==f['group']]
+        if combo and not options and f['required']:
+            try:
+                await el.click()
+                await frame.get_by_role('option').first.wait_for(state='visible',timeout=1500)
+                options=await frame.get_by_role('option').all_text_contents()
+                await el.press('Escape')
+            except Exception: pass
         if question and kind not in ('file','password'):
-            options=f['options']
-            if kind=='radio' and f['group']:
-                options=[item['label'] for item in fields if item['type']=='radio' and item['group']==f['group']]
             task.setdefault('_question_fields',{})[question]=[option[:300] for option in options[:300]]
         value=answer_for(question,task['profile'],task['answers'])
+        referral=discovery_answer(question,options,task['answers'])
+        if value is None: value=referral
+        if referral_other and normalize(question)=='if other please specify':
+            value=value or 'Internship Radar'
+        referral_other=bool(referral and normalize(referral)=='other')
         if value is None and f['required']:
             value=await semantic_answer(question,task['answers'],client,model)
         if value is None:
             if f['required']: missing.append(question or 'Unlabeled required field')
             continue
         try:
-            if kind=='checkbox':
+            if grouped:
+                choices=[item for item in fields if item['type']==kind and item['group']==f['group'] and normalize(item['label'])==normalize(str(value))]
+                if len(choices)!=1: missing.append(question+' (choose an exact option)')
+                else: await control(choices[0]).check()
+            elif kind=='checkbox':
                 if normalize(str(value)) in ('yes','true','i agree'): await el.check()
                 elif normalize(str(value)) in ('no','false'): await el.uncheck()
                 else: missing.append(question)
@@ -141,9 +180,15 @@ async def fill_form(frame, task, client, model=''):
                 choices=[o for o in f['options'] if normalize(o)==normalize(str(value))]
                 if len(choices)!=1: missing.append(question+' (choose an exact option)')
                 else: await el.select_option(label=choices[0])
-            elif kind=='combobox' or await el.get_attribute('role')=='combobox':
-                await el.fill(str(value))
-                option=frame.get_by_role('option',name=str(value),exact=True)
+            elif combo:
+                choices=[o for o in options if normalize(o)==normalize(str(value)) or
+                         (normalize(question)=='country' and normalize(re.sub(r'\s*\+\d+$','',o))==normalize(str(value)))]
+                if options and len(choices)!=1:
+                    missing.append(question+' (choose an exact option)'); continue
+                selected=choices[0] if choices else str(value)
+                await el.click()
+                if await el.get_attribute('readonly') is None: await el.fill(str(value))
+                option=frame.get_by_role('option',name=selected,exact=True)
                 await option.wait_for(state='visible',timeout=2500)
                 await option.click()
             elif kind not in ('password',):

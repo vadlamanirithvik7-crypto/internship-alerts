@@ -39,3 +39,11 @@ Private resumes and answers are sent only over the authenticated worker connecti
 ## Validation
 
 `python -m pytest -q` covers role-based queue creation, source deduplication, unknown required questions, stop/pause and permit gating, expired submission leases, idempotent receipts, authentication, demo isolation, and synthetic browser submission/confirmation. Browser tests intercept all employer traffic; they do not send real applications.
+
+### Employer choices and shared-answer retries
+
+Greenhouse's public job metadata supplies the exact question choices. Refresh employer choices saves a partial draft without queuing or submitting; it repairs referral checkbox options previously mistaken for separate questions. The owner-only attention payload includes saved values for those fields so a reload can restore them. Invalid old free-text values remain visible beside the new dropdown and must be replaced with an exact choice. Long option text is also displayed below the dropdown.
+
+The worker uses stable employer field IDs through React updates, ignores aria-hidden validation proxies as questions, and treats a checkbox group as one question. Unknown custom dropdown choices are inspected from the rendered menu. Setting `Application discovery source = Internship Radar` enables truthful referral defaults: Other when offered, or Internship Radar for a text field. It never fabricates a referrer when neither is available. `Sponsorship required = No` answers direct need/require-sponsorship questions; specific visa, citizenship and inverted wording remain separate.
+
+Retry attention items requeues only unsubmitted needs-input tasks. Resumes, applicant snapshots, active attempts, cancelled jobs and uncertain submissions remain unchanged. The optional Use latest saved answers checkbox explicitly replaces matching older answers with the saved library; unchecked, application-specific answers take precedence.

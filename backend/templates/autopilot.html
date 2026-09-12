@@ -7,6 +7,8 @@
 <p class="muted">Pause keeps your queue. Stop also tells the local worker to exit and close its browser. Controls reach an online worker within a few seconds. An application already sent cannot be withdrawn; uncertain submissions will not retry automatically.</p>
 <p>New listings discovered after your first Start are added automatically, including listings found while paused. US · Summer 2027 · internships only · no co-ops. Exact employer links are required.</p>
 <form action="/autopilot/backfill" method="post"><button class="secondary">Queue existing internships</button></form>
+<form action="/autopilot/retry-attention" method="post"><label><input type="checkbox" name="replace_saved" value="yes"> Use latest saved answers for matching questions, replacing older answers</label><br><button class="secondary">Retry attention items with saved answers</button></form>
+<p class="muted">Retries unsubmitted attempts using saved answers. Confirmed, uncertain, cancelled, and active submissions keep their current state.</p>
 <p class="muted">Add existing matching roles using your saved resumes and answers. Applied, dismissed, closed, and duplicate roles are skipped. New discoveries take priority over the backlog. This button adds work to the queue; Start / Resume and a connected Mac run it.</p></section>
 <section class="panel" id="application-questions" aria-labelledby="questions-heading">
 <h2 id="questions-heading">Questions waiting for you</h2>
@@ -22,7 +24,7 @@
 <div id="worker-current"></div><p id="worker-counts"></p>
 <h3>Recent activity</h3><div id="worker-recent"><p>No activity loaded yet.</p></div>
 <p class="muted" id="worker-updated">Updates automatically every 3 seconds while this page is open.</p></section>
-<script src="/static/worker-activity.js?v=inline-answers-3" defer></script>
+<script src="/static/worker-activity.js?v=employer-choices-4" defer></script>
 <div class="assistant-grid"><section class="panel"><h2>Choose your resumes</h2><p><a href="/apply-settings">Upload PDFs and save your contact details →</a></p>
 <form action="/autopilot/settings" method="post" class="assistant-form">
 {% for role,label in [('software','Software engineering'),('hardware','Electrical / hardware / chips'),('embedded','Embedded / firmware')] %}
