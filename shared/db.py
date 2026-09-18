@@ -18,7 +18,6 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
-    LargeBinary,
     String,
     Text,
     UniqueConstraint,
@@ -26,7 +25,7 @@ from sqlalchemy import (
     inspect,
     text,
 )
-from sqlalchemy.orm import declarative_base, sessionmaker, deferred
+from sqlalchemy.orm import declarative_base, sessionmaker
 
 Base = declarative_base()
 
@@ -228,118 +227,6 @@ class AICache(Base):
     payload = Column(Text, nullable=False)
     created_at = Column(DateTime, default=utcnow, nullable=False)
 
-
-
-class StoredResume(Base):
-    """Immutable attachment versions; at most three are available for new tasks."""
-    __tablename__ = "stored_resumes"
-    id = Column(Integer, primary_key=True)
-    name = Column(String(120), nullable=False)
-    filename = Column(String(160), nullable=False)
-    content = deferred(Column(LargeBinary, nullable=False))
-    sha256 = Column(String(64), nullable=False)
-    active = Column(Boolean, default=True, nullable=False)
-    created_at = Column(DateTime, default=utcnow, nullable=False)
-
-
-class ApplicantSettings(Base):
-    __tablename__ = "applicant_settings"
-    id = Column(Integer, primary_key=True)
-    data = Column(Text, default="{}", nullable=False)
-    review_before_submit = Column(Boolean, default=False, nullable=False)
-    updated_at = Column(DateTime, default=utcnow, nullable=False)
-
-
-class ApplicationTask(Base):
-    __tablename__ = "application_tasks"
-    id = Column(Integer, primary_key=True)
-    posting_id = Column(Integer, ForeignKey("postings.id"), unique=True, nullable=False)
-    resume_id = Column(Integer, ForeignKey("stored_resumes.id"), nullable=False)
-    applicant = Column(Text, nullable=False)
-    target_url = Column(String(1500), nullable=False)
-    application_key = Column(String(64), nullable=False, unique=True)
-    answers = Column(Text, default="{}", nullable=False)
-    questions = Column(Text, default="[]", nullable=False)
-    state = Column(String(30), default="queued", nullable=False, index=True)
-    detail = Column(String(600), default="Waiting for the free application worker.", nullable=False)
-    review_before_submit = Column(Boolean, default=False, nullable=False)
-    reviewed_digest = Column(String(64), default="", nullable=False)
-    claim_token = Column(String(64))
-    claimed_at = Column(DateTime)
-    created_at = Column(DateTime, default=utcnow, nullable=False)
-    updated_at = Column(DateTime, default=utcnow, nullable=False)
-    submission_started_at = Column(DateTime)
-    submitted_at = Column(DateTime)
-    confirmation = Column(String(600), default="", nullable=False)
-
-
-class ApplicationWorker(Base):
-    __tablename__ = "application_worker"
-    id = Column(Integer, primary_key=True)
-    last_seen_at = Column(DateTime, default=utcnow, nullable=False)
-
-
-class AutoApplySettings(Base):
-    __tablename__ = "auto_apply_settings"
-    id = Column(Integer, primary_key=True)
-    mode = Column(String(20), default="stopped", nullable=False)
-    software_resume_id = Column(Integer, ForeignKey("stored_resumes.id"))
-    hardware_resume_id = Column(Integer, ForeignKey("stored_resumes.id"))
-    embedded_resume_id = Column(Integer, ForeignKey("stored_resumes.id"))
-    answers = Column(Text, default="{}", nullable=False)
-    token_digest = Column(String(64), default="", nullable=False)
-    started_at = Column(DateTime)
-    last_seen_at = Column(DateTime)
-    generation = Column(Integer, default=0, nullable=False)
-    last_queued_at = Column(DateTime)
-
-
-class AutoApplication(Base):
-    __tablename__ = "auto_applications"
-    destination_key = Column(String(64), unique=True)
-    id = Column(Integer, primary_key=True)
-    posting_id = Column(Integer, ForeignKey("postings.id"), unique=True, nullable=False)
-    resume_id = Column(Integer, ForeignKey("stored_resumes.id"), nullable=False)
-    application_key = Column(String(64), unique=True, nullable=False)
-    target_url = Column(Text, nullable=False)
-    applicant = Column(Text, nullable=False)
-    answers = Column(Text, default="{}", nullable=False)
-    questions = Column(Text, default="[]", nullable=False)
-    state = Column(String(30), default="queued", nullable=False)
-    detail = Column(String(600), default="Waiting for your Mac.", nullable=False)
-    claim_token = Column(String(64))
-    claimed_at = Column(DateTime)
-    generation = Column(Integer, nullable=False, default=0)
-    submission_started_at = Column(DateTime)
-    submitted_at = Column(DateTime)
-    confirmation = Column(String(600), default="", nullable=False)
-    created_at = Column(DateTime, default=utcnow, nullable=False)
-    updated_at = Column(DateTime, default=utcnow, nullable=False)
-
-
-class MailConnection(Base):
-    __tablename__ = "mail_connection"
-    id = Column(Integer, primary_key=True)
-    email = Column(String(254), nullable=False)
-    token_digest = Column(String(64), nullable=False)
-    enabled = Column(Boolean, default=True, nullable=False)
-    last_received_at = Column(DateTime)
-
-
-class MailEvent(Base):
-    __tablename__ = "mail_events"
-    id = Column(Integer, primary_key=True)
-    message_key = Column(String(64), unique=True, nullable=False)
-    message_id = Column(String(100), nullable=False)
-    posting_id = Column(Integer, ForeignKey("postings.id"))
-    candidates = Column(Text, default="[]", nullable=False)
-    stage = Column(String(30), nullable=False)
-    subject = Column(String(300), nullable=False)
-    sender = Column(String(300), nullable=False)
-    snippet = Column(String(1000), nullable=False)
-    received_at = Column(DateTime, nullable=False)
-    state = Column(String(30), default="review", nullable=False)
-    created_at = Column(DateTime, default=utcnow, nullable=False)
 
 
 def get_engine(db_url: str = None):

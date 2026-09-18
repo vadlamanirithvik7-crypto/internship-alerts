@@ -71,7 +71,7 @@ async def access_control(request, call_next):
         request.scope["path"].removeprefix(request.scope.get("root_path", "")) or "/"
     )
     request.state.route_path = route_path
-    if route_path not in ("/healthz", "/integrations/mail", "/integrations/auto-apply", "/login") and not route_path.startswith("/static/"):
+    if route_path not in ("/healthz", "/login") and not route_path.startswith("/static/"):
         if request.state.demo:
             if request.method not in ("GET", "HEAD"):
                 return JSONResponse(
@@ -494,14 +494,12 @@ def job_detail(request: Request, posting_id: int, profile: int | Literal[""] = 0
         else db.scalar(select(ResumeProfile).order_by(ResumeProfile.id))
     )
     explanation = explain(db, selected, p) if selected else None
-    from shared.db import AutoApplication
-    auto_task = None if request.state.demo else db.scalar(select(AutoApplication).where(AutoApplication.posting_id==p.id))
     return templates.TemplateResponse(
         request, "job.html", {"p": p, "profile": selected, "explanation": explanation,
                              "restriction_reasons": restriction_reasons(p.title, p.description),
                              "application_url": application_url(p),
                              "employer_site_url": direct_url(p.employer_site_url),
-                             "employer_search_url": employer_search_url(p), "auto_task": auto_task}
+                             "employer_search_url": employer_search_url(p)}
     )
 
 
@@ -521,21 +519,8 @@ def update_status(
     p = db.get(Posting, posting_id)
     if not p:
         raise HTTPException(404)
-    # A manual applied/stage update must stop an in-flight preparation task.
-    from shared.db import ApplicationTask
-    task = db.scalar(select(ApplicationTask).where(ApplicationTask.posting_id == p.id).with_for_update())
     if status == "not_interested" and p.applied_at:
         raise HTTPException(409, "This role is already applied to. Update its application stage instead.")
-    if task and status in ("applied", "interview", "offer", "rejected"):
-        task.state = "submitted"
-        task.submitted_at = task.submitted_at or utcnow()
-        task.confirmation = "Owner recorded application progress manually."
-        task.detail = "Tracked as applied by the owner."
-        task.updated_at = utcnow()
-    elif task and task.state != "submitted":
-        task.state = "cancelled"
-        task.detail = "Automatic applications have been removed."
-        task.updated_at = utcnow()
     p.status = status
     p.status_updated_at = utcnow()
     if status == "applied" and p.applied_at is None:
@@ -748,6 +733,4 @@ demo_app.mount(
 )
 from backend.apply_routes import register as register_application_routes
 register_application_routes(app, templates, get_db)
-from backend.auto_routes import register as register_auto_routes
-register_auto_routes(app, templates, get_db)
 app.mount("/demo", demo_app)

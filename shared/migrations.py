@@ -38,6 +38,18 @@ def migrate(conn):
             "detail='Automatic applications removed. Check employer confirmation if submission had already started.' "
             "WHERE state IN ('queued','running','submitting','needs_info','needs_review','needs_action')"
         ))
+    # Retire old automation records without changing manually tracked postings.
+    # Old clients lose their credentials and no tasks can be claimed again.
+    if "auto_apply_settings" in tables:
+        conn.execute(text("UPDATE auto_apply_settings SET mode='stopped', token_digest='' WHERE mode!='stopped' OR token_digest!=''"))
+    if "mail_connection" in tables:
+        conn.execute(text("UPDATE mail_connection SET enabled=FALSE, token_digest='' WHERE enabled=TRUE OR token_digest!=''"))
+    if "auto_applications" in tables:
+        conn.execute(text(
+            "UPDATE auto_applications SET state=CASE WHEN submission_started_at IS NULL THEN 'cancelled' ELSE 'uncertain' END, "
+            "claim_token=NULL, detail='Automatic applications removed. Apply on the employer site manually.' "
+            "WHERE state IN ('queued','running','submitting','needs_input','waiting_link')"
+        ))
     for table, additions in ADDITIONS.items():
         if table not in tables:
             continue

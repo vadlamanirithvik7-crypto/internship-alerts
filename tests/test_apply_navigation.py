@@ -1,4 +1,4 @@
-"""Regression for applying with saved PDFs but no matching profile."""
+"""Regression for opening employer applications without a matching profile."""
 from urllib.parse import urlsplit
 from contextlib import contextmanager
 import socket
@@ -10,9 +10,8 @@ import uvicorn
 import pytest
 from sqlalchemy import delete, select
 
-from shared.db import ApplicationTask, Posting, ResumeProfile, StoredResume
+from shared.db import Posting, ResumeProfile
 from test_app import client
-from test_applying import pdf_bytes, save_settings
 
 
 def prepare_perpay(client):
@@ -24,9 +23,7 @@ def prepare_perpay(client):
         posting.title = "Software Engineering Internship, Summer 2027"
         posting.url = "https://job-boards.greenhouse.io/perpay/jobs/4076988007"
         db.commit()
-    save_settings(c)
-    c.post('/resumes', data={'name': 'Software'},
-           files={'resume': ('software.pdf', pdf_bytes(), 'application/pdf')})
+
 
 
 def test_blank_profile_links_and_validation(client):
@@ -88,7 +85,6 @@ def test_phone_discover_opens_employer_without_matching_profile(client):
         assert page.get_by_role('button', name='Mark applied').is_visible()
         browser.close()
     with Session() as db:
-        assert db.scalar(select(ApplicationTask)) is None
         assert db.get(Posting, 1).applied_at is None
 
 

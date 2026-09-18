@@ -63,15 +63,13 @@ Profiles support preferences, location restrictions, term, exclusions, and remot
 
 On a role's page, **Mark applied** records the first application time and marks it **Applied — done**. Completed applications leave the default discovery feed and stop producing new alerts. The Applications page retains their stages and notes. Each progress update writes an Excel workbook and a Google Sheets sync record to PostgreSQL in the same transaction. The free [Google Sheets bridge](docs/google-sheets.md) updates the owner's private Sheet in the background, with durable retries and protection against duplicate or out-of-order updates. Its pending count is visible in Applications. **Download application spreadsheet** exports a separate persistent Excel backup with company, role, location, term, stage, dates, URL, and notes. The public demo cannot sync or export private applications.
 
-The live feed and alert worker require explicit evidence of a **United States work location**, an **internship or co-op**, and **summer 2027**. Unknown remote regions, unsupported seasons, and graduation-year-only references are excluded. This conservative scope may omit a relevant role until its source supplies enough evidence. Existing historical rows remain stored separately from the targeted discovery feed.
+The live feed and alert worker require explicit evidence of a **United States work location**, an **internship (no co-ops)**, and **summer 2027**. Unknown remote regions, unsupported seasons, and graduation-year-only references are excluded. This conservative scope may omit a relevant role until its source supplies enough evidence. Existing historical rows remain stored separately from the targeted discovery feed.
 
 ## Manual applications and eligibility
 
-Open a role and tap **Open employer application** to apply yourself. Manual applications remain available. Opt-in [local auto apply](docs/auto-apply.md) can fill supported employer forms using your saved facts and selected resume. After submitting, use **Mark applied** to remove the role from discovery and update the live Google Sheet. Saved PDFs remain available for download. The retired queue remains disabled; the new `/autopilot` worker uses a separate opt-in queue with Pause and Stop controls. Historical records remain stored.
+Open a role and tap **Open employer application** to apply yourself in a new tab. After submitting, use **Mark applied** to remove the role from discovery and update the live Google Sheet. Radar discovers internships, sends alerts, ranks matches, and tracks applications you record manually. It does not submit applications or run a local application worker.
 
 The three role filters use actual job titles: software engineering, embedded/firmware, and electrical/hardware/chip design. Broad skill or employer-description mentions no longer make unrelated roles qualify. Listed citizenship/permanent-residency requirements and graduate-only roles are excluded from discovery and alerts; bachelor's/master's alternatives remain eligible. Missing or incomplete requirements cannot establish individual eligibility—check employer requirements and work authorization before applying. **Not interested** hides a card persistently and stops its alerts; restore it from Applications → Not interested by changing its stage to New.
-
-Optional owner-authorized Gmail tracking continues to show receipts, interviews, rejections and next steps after connection. See [manual application and email setup](docs/application-assistant.md).
 
 ## AI matching and evidence
 
