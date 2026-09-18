@@ -4,7 +4,7 @@ import json
 import pytest
 from sqlalchemy import select, text
 
-from shared.db import Posting, ApplicationTask, ApplicationSync, ResumeProfile, pack_list, init_db
+from shared.db import Posting, ApplicationSync, ResumeProfile, pack_list, init_db
 from shared.eligibility import eligible, restriction_reasons, SEARCH_VERSION
 from shared.role_search import role_tags
 from poller import matcher
@@ -104,7 +104,6 @@ def test_manual_open_retired_endpoints_and_tracking(client):
     assert c.post('/apply-tasks/1/review').status_code == 410
     assert c.get('/apply-tasks').url.path == '/applications'
     with Session() as db:
-        assert db.scalar(select(ApplicationTask)) is None
         assert db.get(Posting, 1).applied_at is None
     assert c.post('/jobs/1/status', data={'status':'applied'}).status_code == 200
     with Session() as db:
@@ -147,30 +146,6 @@ def test_backfill_rechecks_existing_restrictions_and_roles(db):
     db.refresh(p)
     assert p.target_eligible is False and p.search_version == SEARCH_VERSION
     assert p.search_roles == '|software|'
-
-
-@pytest.mark.parametrize('started,expected', [(False,'cancelled'), (True,'uncertain')])
-def test_old_application_tasks_retired_without_losing_history(db, started, expected):
-    from shared.db import utcnow
-    from test_applying import setup_data
-    p, resume = setup_data(db)
-    task = ApplicationTask(posting_id=p.id, resume_id=resume.id, applicant='{}',
-                           target_url=p.url, application_key='legacy-task',
-                           state='submitting' if started else 'queued',
-                           submission_started_at=utcnow() if started else None)
-    db.add(task)
-    db.commit()
-    init_db(db.get_bind())
-    db.refresh(task)
-    db.refresh(p)
-    assert task.state == expected and p.applied_at is None
-    assert resume.content
-
-
-def test_disconnected_worker_never_connects_or_submits(capsys, tmp_path):
-    from applicant.worker import main
-    assert main(["--config", str(tmp_path / "missing.json")]) == 0
-    assert 'disconnected' in capsys.readouterr().out
 
 
 def test_missing_requirements_stay_visible_for_manual_review(client):

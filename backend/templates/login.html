@@ -5,7 +5,7 @@
 <section class="panel" style="margin-top:24px"><span class="eyebrow">YOUR PRIVATE WORKSPACE</span><h1>Welcome back.</h1>
 {% if configured %}<p>Sign in to find internships, choose your resume, and track applications.</p>
 {% if error %}<p role="alert">{{error}}</p>{% endif %}
-<form action="/login" method="post" class="assistant-form">
+<form action="/login" method="post" class="login-form">
 <input type="hidden" name="next" value="{{next_path}}"><input type="hidden" name="csrf" value="{{csrf}}">
 <label>Workspace password<input type="password" name="password" autocomplete="current-password" required autofocus></label>
 <button type="submit" class="full">Sign in</button>

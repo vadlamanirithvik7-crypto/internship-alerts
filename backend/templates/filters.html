@@ -7,7 +7,7 @@
 </div>
 <div class="panel" style="margin-bottom:24px">
   <h2>Always watching for your next opportunity</h2>
-  <p>Checks are scheduled every 30 minutes. Delivery may be delayed by the scheduler or a source outage. Matching new roles go to your configured email or ntfy phone subscription.</p>
+  <p>Checks are scheduled every 5 minutes. Delivery may be delayed by the scheduler or a source outage. Matching new roles go to your configured email or ntfy phone subscription.</p>
   <p class="muted">{% if last_run %}Last check: {{last_run.started_at.strftime('%b %d, %H:%M')}} UTC · {{last_run.state}} · {{last_run.new_postings}} new roles{% else %}Waiting for the first recorded poll. Configure the scheduled worker to use the same database as this app.{% endif %}</p>
   {% if not demo %}<p class="hint">Notification destinations are configured privately in the scheduled worker. Resume ranking changes the feed; alert filters below independently control notifications.</p>{% endif %}
 </div>

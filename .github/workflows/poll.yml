@@ -34,12 +34,14 @@ jobs:
           cache: pip
 
       - name: Install dependencies
-        run: pip install -r requirements.txt pytest httpx numpy
+        run: pip install -r requirements.txt
 
-      - name: Run tests
+      # The full suite (including Playwright/Chromium) runs in test.yml on
+      # code changes. Scheduled scans only need the poller's runtime.
+      - name: Check poller entry point
         env:
           AI_ENABLED: "0"
-        run: python -m pytest -q
+        run: python3 poller/main.py --help
 
       - name: Poll sources and send alerts
         env:
@@ -95,7 +97,7 @@ jobs:
 
       - name: Install dependencies
         if: steps.slot.outputs.run == 'true'
-        run: pip install -r requirements.txt pytest httpx numpy
+        run: pip install -r requirements.txt
 
       - name: Discover and resolve companies
         if: steps.slot.outputs.run == 'true'
