@@ -123,6 +123,8 @@ Before upgrading a live database, take a provider backup and inspect the branch 
 
 ## Alerts and deployment
 
+The poll workflow checks its entry point and scans on a five-minute schedule. The complete test suite, including browser tests, runs separately in `test.yml` when code changes. Browser-test dependencies must not block scheduled discovery.
+
 Set GitHub repository secrets from `.env.example`: database URL, Gmail sender/recipient/app password, ntfy topic, and optional source credentials. GitHub supplies `GITHUB_TOKEN` automatically for Actions. `NTFY_TOKEN` and `NTFY_BASE` support an existing protected topic/account or your own server. A token alone does not make a public topic private; configure topic access separately. Do not purchase a plan for this project.
 
 `render.yaml` is the private dashboard configuration. `render-demo.yaml` is the isolated free public demo. They must not share data. The app checks the database at `/healthz`. Test changes on the development branch before promoting the poller workflow or applying migrations to production.
