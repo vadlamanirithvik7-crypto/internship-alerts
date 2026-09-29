@@ -41,7 +41,9 @@ jobs:
       - name: Check poller entry point
         env:
           AI_ENABLED: "0"
-        run: python3 poller/main.py --help
+        run: |
+          python3 poller/main.py --help
+          python3 -c "from shared.db import get_engine; get_engine('postgresql://localhost/radar_preflight').dispose()"
 
       - name: Poll sources and send alerts
         env:
