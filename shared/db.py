@@ -234,6 +234,10 @@ def get_engine(db_url: str = None):
     # Supabase connection strings sometimes come as postgres:// which SQLAlchemy 2 rejects.
     if db_url.startswith("postgres://"):
         db_url = db_url.replace("postgres://", "postgresql://", 1)
+    # Match our installed driver explicitly. SQLAlchemy 2.1 changed the
+    # postgresql:// default to psycopg 3; this app installs psycopg2-binary.
+    if db_url.startswith("postgresql://"):
+        db_url = db_url.replace("postgresql://", "postgresql+psycopg2://", 1)
     kwargs = {"pool_pre_ping": True} if not db_url.startswith("sqlite") else {}
     return create_engine(db_url, **kwargs)
 
